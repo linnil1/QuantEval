@@ -1,0 +1,15 @@
+species:
+    yeast:
+        ref_genome: ftp://ftp.ensembl.org/pub/release-90/fasta/saccharomyces_cerevisiae/dna/Saccharomyces_cerevisiae.R64-1-1.dna.toplevel.fa.gz
+        ref_transcriptome: ftp://ftp.ensembl.org/pub/release-90/fasta/saccharomyces_cerevisiae/cdna/Saccharomyces_cerevisiae.R64-1-1.cdna.all.fa.gz
+        ref_annotation: ftp://ftp.ensembl.org/pub/release-90/gff3/saccharomyces_cerevisiae/Saccharomyces_cerevisiae.R64-1-1.90.gff3.gz
+        # It will merge the ids in array into single fastq data
+        explow_sraid: [SRR453566]
+        exphigh_sraid: [SRR453566,SRR453567,SRR453568]
+
+datasets:
+- simlow
+- simhigh
+- explow
+- exphigh
+

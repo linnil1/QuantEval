@@ -1,0 +1,55 @@
+# This files contains all pipeline
+# Make sure run this with ipython
+# Make sure you have docker installed
+
+# !pip3 install pyyaml
+import os
+import yaml
+from pprint import pprint
+
+
+data = yaml.load(open("metadata/meta.yaml"))
+thread = 32
+%alias dk docker run -it --rm --security-opt label=disable -v $PWD:/app %s
+pprint(data)
+image_sratool = "quay.io/biocontainers/sra-tools:2.10.8--pl526haddd2b5_0"
+
+
+def download():
+    """
+    Download data from ensembl and ncbi
+    Output:
+        prefix: data/{species}/
+        reference: genome.fasta transcriptome.fasta annotation.gff
+        experiments: xx.raw.fastq
+    """
+    for species in data['species']:
+        meta = data['species'][species]
+        data_folder = f"data/{species}"
+        exp_project = ["explow", "exphigh"]
+        !mkdir -p {data_folder}
+
+        # download sequences and annotation from Ensembl
+        !wget {meta['ref_genome']} -O {data_folder}/genome.fasta.gz
+        !wget {meta['ref_transcriptome']} -O {data_folder}/transcriptome.fasta.gz
+        !wget {meta['ref_annotation']} -O {data_folder}/annotation.gff.gz
+
+        # Download fastq from ncbi
+        !echo '/LIBS/GUID = "7509f4a9-59b3-4305-85a3-e5a140183031"' > /tmp/tmp.mkfg
+        for proj in exp_project:
+            for id in meta[f'{proj}_sraid']:
+                %dk -v /tmp/tmp.mkfg:/root/.ncbi/user-settings.mkfg:ro {image_sratool} \
+                        fastq-dump --defline-seq '@$sn[_$rn]/$ri' --split-files {id} -O /app/{data_folder}
+
+        # unzip all
+        !gzip -d {data_folder}/*.gz
+
+        # merge and rename
+        for proj in exp_project:
+            fastqs_r1 = ' '.join([os.path.join(data_folder, id + "_1.fastq") for id in meta[f'{proj}_sraid']])
+            fastqs_r2 = ' '.join([os.path.join(data_folder, id + "_2.fastq") for id in meta[f'{proj}_sraid']])
+            !cat {fastqs_r1} > {data_folder}/{proj}_r1.raw.fastq
+            !cat {fastqs_r2} > {data_folder}/{proj}_r2.raw.fastq
+
+
+download()
