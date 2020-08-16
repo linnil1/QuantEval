@@ -7,6 +7,8 @@ species:
         explow_sraid: [SRR453566]
         exphigh_sraid: [SRR453566,SRR453567,SRR453568]
         mrna_min_length: 500
+        simlow_file: metadata/flux_simulator_yeast_low
+        simhigh_file: metadata/flux_simulator_yeast_high
 
     dog:
         ref_genome: ftp://ftp.ensembl.org/pub/release-90/fasta/canis_familiaris/dna/Canis_familiaris.CanFam3.1.dna.toplevel.fa.gz
@@ -15,6 +17,8 @@ species:
         explow_sraid: [SRR882109]
         exphigh_sraid: [SRR882105]
         mrna_min_length: 500
+        simlow_file: metadata/flux_simulator_dog_low
+        simhigh_file: metadata/flux_simulator_dog_high
 
     mouse:
         ref_genome: ftp://ftp.ensembl.org/pub/release-90/fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna.toplevel.fa.gz
@@ -23,10 +27,14 @@ species:
         explow_sraid: [SRR203276]
         exphigh_sraid: [SRR203276]
         mrna_min_length: 500
+        simlow_file: metadata/flux_simulator_mouse_low
+        simhigh_file: metadata/flux_simulator_mouse_high
+
 
 datasets:
   - simlow
   - simhigh
   - explow
   - exphigh
+
 

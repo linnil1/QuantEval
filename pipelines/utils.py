@@ -1,29 +1,29 @@
-#!/usr/bin/env python3
 import os
 import re
 from Bio import SeqIO
 
 
-def mRNAFilter(refdir, shortest_length):
+def mRNAFilter(basedir, refdir, simdir, shortest_length):
     '''
     Filter mRNA from seqences
 
     Input:
     * {refdir}/transcriptome.fasta
     * {refdir}/annotation.gff
+    * {refdir}/genome.fasta
 
     Output:
-    * {refdir}/chromosome/*.fasta
-    * {refdir}/chromosome.fasta
-    * {refdir}/mRNA.gtf
-    * {refdir}/flux_simulator.gtf
+    * {basedir}/chromosome.fasta
+    * {basedir}/mRNA.gtf
+    * {simdir}/flux_simulator.gtf
+    * {simdir}/chromosome/*.fasta
 
     Parameters:
-        refdir: str, reference directory
+        basedir: str, Path to species directory
+        refdir: str, Path to reference directory
+        simdir: str, Paht to simulation directory
         shortest_length: int, length threshold
     '''
-    os.makedirs(refdir + '/chromosome', exist_ok=True)
-
     # 1. Get transcriptome name which len > threashold
     print('load transcriptome.fasta')
     transcript_pool = set()  # store all transcriptome name
@@ -97,8 +97,9 @@ def mRNAFilter(refdir, shortest_length):
     print('output flux_simulator.gtf and mRNA.gtf')
     mRNA_count = 0
     total_transcript_length = 0
-    annotation_out = open(refdir + '/mRNA.gtf', 'w')
-    flux_annotation_out = open(refdir + '/flux_simulator.gtf', 'w')
+    os.makedirs(simdir, exist_ok=True)
+    annotation_out = open(basedir + '/mRNA.gtf', 'w')
+    flux_annotation_out = open(simdir + '/flux_simulator.gtf', 'w')
     for annotation_data in annotation_pool:
         category   = annotation_data[2]
         attributes = annotation_data[8]
@@ -143,17 +144,16 @@ def mRNAFilter(refdir, shortest_length):
     # 4. Filter those genome that appeared in the pool
     #    Separate chromosome to /chromosome/*.fasta
     print('output genome.fasta and chromosome.fasta')
+    os.makedirs(simdir + '/chromosome', exist_ok=True)
     chromosome_count = 0
-    with open(refdir + '/chromosome.fasta', 'w') as genome_out:
-        genome_sequences = []
+    with open(basedir + '/chromosome.fasta', 'w') as genome_out:
         for genome in SeqIO.parse(refdir + '/genome.fasta', 'fasta'):
             genome_name = genome.id
             if genome_name not in chromosome_pool:
                 continue
-            SeqIO.write([seq], open(refdir + '/chromosome/' + genome_name + '.fa', 'w'), 'fasta')
+            SeqIO.write([genome], open(simdir + '/chromosome/' + genome_name + '.fa', 'w'), 'fasta')
             chromosome_count += 1
-            genome_sequences.append(genome)
-        SeqIO.write(genome_sequences, genome_out, 'fasta')
+            print(genome.format('fasta'), file=genome_out, end="")
 
     # 4. summary
     print('    - number of chromosomes: {:>16d}'.format(chromosome_count))
@@ -163,22 +163,52 @@ def mRNAFilter(refdir, shortest_length):
     mRNA_count = 0
     total_transcript_length = 0
     retain_transcript = False
-    with open(refdir + '/mRNA.fasta', 'w') as transcript_out:
+    with open(basedir + '/mRNA.fasta', 'w') as transcript_out:
         transcript_sequences = []
         for transcript in SeqIO.parse(refdir + '/transcriptome.fasta', 'fasta'):
             transcript_name = transcript.id.split('.')[0]
             if transcript_name in mRNA_pool:
                 mRNA_count += 1
-                transcript_sequences.append(transcript)
                 total_transcript_length += len(transcript.seq)
-        SeqIO.write(genome_sequences, transcript_out, 'fasta')
+                print(transcript.format('fasta'), file=transcript_out, end="")
 
     # 5. summary
     print('    - number of transcripts: {:>16d}'.format(mRNA_count))
     print('    - total length of transcripts: {:>10d}'.format(total_transcript_length))
-    return
 
+
+def splitInterleavedReads(file_fastq, output_name):
+    """
+    Separte read1 and read2 from simulation fastq
+    Input: xx.fastq
+    Output: {output_name}_r1.fastq, {output_name}_r1.fastq
+    """
+    # init
+    fragment_count = 0
+    r1 = open(output_name + "_r1.fastq", "w")
+    r2 = open(output_name + "_r2.fastq", "w")
+    
+    for i, seq in enumerate(SeqIO.parse(file_fastq, 'fastq')):
+        # rename description
+        if i % 2 == 0:
+            fragment_count += 1
+        desc = seq.id
+        seq.description = ""
+        seq.id = f"flux_simulator_{fragment_count}:{desc[:-4]}/{desc[-1]}"
+
+        # write
+        if desc[-1] == '1':
+            print(seq.format('fastq'), file=r1, end="")
+        else:
+            print(seq.format('fastq'), file=r2, end="")
+
+    # close
+    r1.close()
+    r2.close()
+    
 
 if __name__ == '__main__':
-    mRNAFilter('data/yeast', 500)
+    data_folder = 'data/yeast'
+    # mRNAFilter(data_folder, refdir=f"{data_folder}/download", simdir=f"{data_folder}/simulation", shortest_length=500)
+    splitInterleavedReads(f"{data_folder}/simulation/flux_simulator_yeast_low.fastq", f"{data_folder}/simlow")
     sys.exit(0)

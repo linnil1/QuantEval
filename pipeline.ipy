@@ -13,19 +13,21 @@ thread = 32
 %alias dk docker run -it --rm --security-opt label=disable -v $PWD:/app %s
 # pprint(data)
 image_sratool = "quay.io/biocontainers/sra-tools:2.10.8--pl526haddd2b5_0"
+image_fluxsimulator = "quay.io/biocontainers/flux-simulator:1.2.1--2"
+base_folder = "data"
 
 
 def download():
     """
     Download data from ensembl and ncbi
     Output:
-        prefix: data/{species}/
+        prefix: data/{species}/download
         reference: genome.fasta transcriptome.fasta annotation.gff
         experiments: xx.raw.fastq
     """
     for species in data['species']:
         meta = data['species'][species]
-        data_folder = f"data/{species}"
+        data_folder = f"{base_folder}/{species}/download"
         exp_project = ["explow", "exphigh"]
         !mkdir -p {data_folder}
 
@@ -48,19 +50,77 @@ def download():
         for proj in exp_project:
             fastqs_r1 = ' '.join([os.path.join(data_folder, id + "_1.fastq") for id in meta[f'{proj}_sraid']])
             fastqs_r2 = ' '.join([os.path.join(data_folder, id + "_2.fastq") for id in meta[f'{proj}_sraid']])
-            !cat {fastqs_r1} > {data_folder}/{proj}_r1.raw.fastq
-            !cat {fastqs_r2} > {data_folder}/{proj}_r2.raw.fastq
+            !cat {fastqs_r1} > {data_folder}/../{proj}_r1.raw.fastq
+            !cat {fastqs_r2} > {data_folder}/../{proj}_r2.raw.fastq
 
 
 def prepareReference():
-    from pipelines.prepare_reference import mRNAFilter
+    """
+    Filter out short and mito mrna from gnome and transcriptome and
+    Prepare data for simulation
+
+    prefix: data/{species}/
+
+    Input:
+    * download/genome.fasta
+    * download/transcriptome.fasta
+    * download/annotation.gff
+    Output:
+    * chromosome.fasta
+    * mRNA.gtf
+    * simulation/chromosome/*.fasta
+    * simulation/flux_simulator.gtf
+    * simulation/flux_simulator_clean.gtf
+    """
+
+    from pipelines.utils import mRNAFilter
     for species in data['species']:
-        data_folder = f"data/{species}"
-        mRNAFilter(data_folder, data['species']['mrna_min_length'])
+        data_folder = f"{base_folder}/{species}"
+        mRNAFilter(data_folder, 
+                   refdir=f"{data_folder}/download",
+                   simdir=f"{data_folder}/simulation",
+                   shortest_length=data['species'][species]['mrna_min_length'])
         # I don't know what it is
         awk_query = '\'BEGIN{FS="\t";OFS="\t"}{split($NF,a," ");pfx="";s="";for(i=1;i<=length(a);i+=2){if(a[i]=="transcript_id"){pfx=a[i]" "a[i+1]}else{s=s" "a[i]" "a[i+1]}}if(pfx==""){print "[WARN] line "NR" without transcript_id!" > "/dev/stderr"}else{$NF=pfx""s;print$0} }\''
-        !awk {awk_query} {data_folder}/flux_simulator.gtf > {data_folder}/flux_simulator_clean.gtf
+        !awk {awk_query} {data_folder}/simulation/flux_simulator.gtf > {data_folder}/simulation/flux_simulator_clean.gtf
+
+
+def simulation():
+    """
+    Simulate the reads sequencing from transcriptome.fasta
+
+    prefix: data/{species}/
+
+    Input: 
+    * simulation/chromosome/*.fasta
+    * simulation/flux_simulator.gtf
+    * simulation/flux_simulator_clean.gtf
+    * metadata/flux_simulator_*.par
+    * metadata/flux_simulator_*.pro
+
+    Output: 
+    * simulation/*
+    * simlow_r1.fastq,simlow_r2.fastq
+    * simhigh_r1.fastq,simhigh_r2.fastq
+    """
+    from pipelines.utils import splitInterleavedReads
+    for species in data['species']:
+        sim_projects = ['simlow', 'simhigh']
+        for proj in sim_projects:
+            data_folder = f"{base_folder}/{species}/simulation"
+            file_simulation = data['species'][species][proj + '_file']
+            !cp {file_simulation}* {data_folder}
+            basename = os.path.basename(file_simulation)
+
+            # simulation
+            %dk -w /app {image_fluxsimulator} \
+                flux-simulator --threads {thread} -p {data_folder}/{basename}.par -l -s \
+                > {data_folder}/{basename}.out 2> {data_folder}/{basename}.err 
+
+            # split reads
+            splitInterleavedReads(f"{data_folder}/{basename}.fastq", f"{data_folder}/{sim_projects}")
 
 
 # download()
-prepareReference()
+# prepareReference()
+simulation()
