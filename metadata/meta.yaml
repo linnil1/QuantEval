@@ -7,6 +7,8 @@ species:
         explow_sraid: [SRR453566]
         exphigh_sraid: [SRR453566,SRR453567,SRR453568]
         mrna_min_length: 500
+
+        # no extention
         simlow_file: metadata/flux_simulator_yeast_low
         simhigh_file: metadata/flux_simulator_yeast_high
 
@@ -37,4 +39,14 @@ datasets:
   - explow
   - exphigh
 
+assemble:
+  trinity:
+    image: "trinityrnaseq/trinityrnaseq:2.11.0"
+    minlen: 500
+  rnaspades:
+    image: "biocontainers/spades:v3.13.1_cv1"
+    minlen: 500
+  transabyss:
+    image: "quay.io/biocontainers/transabyss:2.0.1--py_6"
+    minlen: 500
 
