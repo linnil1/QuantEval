@@ -205,10 +205,31 @@ def splitInterleavedReads(file_fastq, output_name):
     # close
     r1.close()
     r2.close()
+
+
+def fasta_length_filter(file_fasta, file_result, threshold):
+    '''
+    Select sequences that lenght is larger than threshold
+
+    Input:
+    * file_fasta, str
+    * threshold, int
+
+    Output:
+    * file_result
+    '''
+
+    # 1. Get transcriptome name which len > threashold
+    print('load transcriptome.fasta')
+    with open(file_result, 'w') as result:
+        for seq in SeqIO.parse(file_fasta, 'fasta'):
+            if len(seq.seq) >= threshold:
+                print(seq.format('fasta'), file=result, end="")
     
 
 if __name__ == '__main__':
     data_folder = 'data/yeast'
     # mRNAFilter(data_folder, refdir=f"{data_folder}/download", simdir=f"{data_folder}/simulation", shortest_length=500)
-    splitInterleavedReads(f"{data_folder}/simulation/flux_simulator_yeast_low.fastq", f"{data_folder}/simlow")
+    # splitInterleavedReads(f"{data_folder}/simulation/flux_simulator_yeast_low.fastq", f"{data_folder}/simlow")
+    # fasta_length_filter("data/yeast/rnaspades/transcripts.fasta", "data/yeast/simlow.rnaspades.fasta", 500)
     sys.exit(0)

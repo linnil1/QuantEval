@@ -2,19 +2,26 @@
 # Make sure run this with ipython
 # Make sure you have docker installed
 
-# !pip3 install pyyaml
+# !pip3 install pyyaml numpy pandas biopython
 import os
 import yaml
 from pprint import pprint
 
 
 data = yaml.load(open("metadata/meta.yaml"))
-thread = 32
-%alias dk docker run -it --rm --security-opt label=disable -v $PWD:/app %s
 # pprint(data)
-image_sratool = "quay.io/biocontainers/sra-tools:2.10.8--pl526haddd2b5_0"
-image_fluxsimulator = "quay.io/biocontainers/flux-simulator:1.2.1--2"
+thread = 32
+memory = "300"
+%alias dk docker run -it --rm --security-opt label=disable -v $PWD:/app -w /app %s
+image_sratool =         "quay.io/biocontainers/sra-tools:2.10.8--pl526haddd2b5_0"
+image_fluxsimulator =   "quay.io/biocontainers/flux-simulator:1.2.1--2"
+image_fastqc =          "quay.io/biocontainers/fastqc:0.11.9--0"
+image_trimmomatic =     "quay.io/biocontainers/trimmomatic:0.39--1"
+image_trinity =         "trinityrnaseq/trinityrnaseq:2.11.0"
+image_transabyss =      "quay.io/biocontainers/transabyss:2.0.1--py_6"
+image_rnaspades =       "biocontainers/spades:v3.13.1_cv1"
 base_folder = "data"
+assemble_minlen = 500
 
 
 def download():
@@ -23,7 +30,7 @@ def download():
     Output:
         prefix: data/{species}/download
         reference: genome.fasta transcriptome.fasta annotation.gff
-        experiments: xx.raw.fastq
+        experiments: xx.fastq
     """
     for species in data['species']:
         meta = data['species'][species]
@@ -41,7 +48,7 @@ def download():
         for proj in exp_project:
             for id in meta[f'{proj}_sraid']:
                 %dk -v /tmp/tmp.mkfg:/root/.ncbi/user-settings.mkfg:ro {image_sratool} \
-                        fastq-dump --defline-seq '@$sn[_$rn]/$ri' --split-files {id} -O /app/{data_folder}
+                        fastq-dump --defline-seq '@$sn[_$rn]/$ri' --split-files {id} -O {data_folder}
 
         # unzip all
         !gzip -d {data_folder}/*.gz
@@ -50,8 +57,8 @@ def download():
         for proj in exp_project:
             fastqs_r1 = ' '.join([os.path.join(data_folder, id + "_1.fastq") for id in meta[f'{proj}_sraid']])
             fastqs_r2 = ' '.join([os.path.join(data_folder, id + "_2.fastq") for id in meta[f'{proj}_sraid']])
-            !cat {fastqs_r1} > {data_folder}/../{proj}_r1.raw.fastq
-            !cat {fastqs_r2} > {data_folder}/../{proj}_r2.raw.fastq
+            !cat {fastqs_r1} > {data_folder}/../{proj}_r1.fastq
+            !cat {fastqs_r2} > {data_folder}/../{proj}_r2.fastq
 
 
 def prepareReference():
@@ -76,7 +83,7 @@ def prepareReference():
     from pipelines.utils import mRNAFilter
     for species in data['species']:
         data_folder = f"{base_folder}/{species}"
-        mRNAFilter(data_folder, 
+        mRNAFilter(data_folder,
                    refdir=f"{data_folder}/download",
                    simdir=f"{data_folder}/simulation",
                    shortest_length=data['species'][species]['mrna_min_length'])
@@ -111,16 +118,112 @@ def simulation():
             file_simulation = data['species'][species][proj + '_file']
             !cp {file_simulation}* {data_folder}
             basename = os.path.basename(file_simulation)
+            print("Simulate", basename)
 
             # simulation
-            %dk -w /app {image_fluxsimulator} \
+            %dk {image_fluxsimulator} \
                 flux-simulator --threads {thread} -p {data_folder}/{basename}.par -l -s \
                 > {data_folder}/{basename}.out 2> {data_folder}/{basename}.err 
 
             # split reads
-            splitInterleavedReads(f"{data_folder}/{basename}.fastq", f"{data_folder}/{sim_projects}")
+            splitInterleavedReads(f"{data_folder}/{basename}.fastq", f"{data_folder}/../{proj}")
 
+
+def fastqc():
+    """
+    Fastqc(Inspect reads quality)
+    Input: data/{species}/xx.fastq
+    Output: data/{species}/fastqc/
+    """
+    for species in data['species']:
+        data_folder = f"{base_folder}/{species}"
+        !mkdir -p {data_folder}/fastqc
+        %dk {image_fastqc} \
+            fastqc -t {thread} -f fastq -o {data_folder}/fastqc {data_folder}/*.fastq
+
+
+
+def trimmomatic():
+    """
+    trimmomatic(Remove low quality reads)
+    Input: data/{species}/xx.fastq
+    Output: data/{species}/xx.trim.fastq
+    """
+    for species in data['species']:
+        data_folder = f"{base_folder}/{species}"
+        !mkdir -p {data_folder}/trimmed
+        for ds in data['datasets']:
+            basename = f"{data_folder}/{ds}"
+            basename_trim = f"{data_folder}/trimmed/{ds}"
+            print("Trim", basename)
+
+            %dk {image_trimmomatic} \
+                trimmomatic PE -threads {thread} -phred33 -trimlog {basename_trim}.log \
+                {basename}_r1.fastq {basename}_r2.fastq \
+                {basename_trim}_r1.paired.fastq {basename_trim}_r1.unpaired.fastq \
+                {basename_trim}_r2.paired.fastq {basename_trim}_r2.unpaired.fastq \
+                SLIDINGWINDOW:4:20 MINLEN:30
+
+
+def assemble():
+    """
+    Assemble reads to transcriptome
+    Three methods are used:
+        trinity, rnaspades, transabyss
+
+    Prefix: data/{species}
+
+    Input: trimmed/xx_r1.paired.fastq trimmed/xx_r2.paired.fastq.gz
+    Output: xx.trinity.fasta
+    """
+    from pipelines.utils import fasta_length_filter
+    min_len = assemble_minlen
+
+    for species in data['species']:
+        data_folder = f"{base_folder}/{species}"
+        for ds in data['datasets']:
+            basename_trim = f"{data_folder}/trimmed/{ds}"
+
+            # TOCHECK: Using different strand when proceed mouse data with experiment fastq
+            if ds.startswith("exp") and species == "mouse":
+                strand_trinity = "--SS_lib_type RF"
+                strand_transabyss = "--SS"
+                strand_rnaspades = "--ss-rf"
+            else:
+                strand_trinity = ""
+                strand_transabyss = ""
+                strand_rnaspades = ""
+
+            # trinity
+            base_assemble_folder = f"{data_folder}/trinity"
+            !mkdir -p {base_assemble_folder}
+            %dk {image_trinity} \
+                Trinity --max_memory {memory}G --CPU {thread} --seqType fq {strand_trinity} --min_contig_length {min_len} \
+                --left {basename_trim}_r1.paired.fastq --right {basename_trim}_r2.paired.fastq --output {base_assemble_folder} \
+                > {base_assemble_folder}/log 2> {base_assemble_folder}/logerr
+            !cp {base_assemble_folder}/Trinity.fasta {data_folder}/{ds}.trinity.fasta
+            !rm -rf {base_assemble_folder}
+
+            # rnaspades
+            base_assemble_folder = f"{data_folder}/rnaspades"
+            !mkdir -p {base_assemble_folder}
+            %dk -u root {image_rnaspades} \
+                rnaspades.py -t {thread} -m {memory} {strand_rnaspades} \
+                -1 {basename_trim}_r1.paired.fastq -2 {basename_trim}_r2.paired.fastq -o {base_assemble_folder} \
+                > {base_assemble_folder}/log 2> {base_assemble_folder}/logerr
+            fasta_length_filter(f"{base_assemble_folder}/transcripts.fasta", f"{data_folder}/{ds}.rnaspades.fasta", min_len)
+            !rm -rf {base_assemble_folder}
+
+            # transabyss
+            base_assemble_folder = f"{data_folder}/transabyss"
+            !mkdir -p {base_assemble_folder}
+            %dk {image_transabyss} bash -c "ln -s /usr/local/bin/ /usr/local/lib/python3.8/site-packages/bin && transabyss --threads {thread} --length {min_len} {strand_transabyss} --pe {basename_trim}_r1.paired.fastq {basename_trim}_r2.paired.fastq --outdir {base_assemble_folder} > {base_assemble_folder}/log 2> {base_assemble_folder}/logerr"
+            !cp {base_assemble_folder}/transabyss-final.fa {data_folder}/{ds}.transabyss.fasta
+            !rm -rf {base_assemble_folder}
 
 # download()
 # prepareReference()
-simulation()
+# simulation()
+# fastqc()
+# trimmomatic()
+assemble()
