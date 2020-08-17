@@ -11,7 +11,7 @@ from pprint import pprint
 data = yaml.load(open("metadata/meta.yaml"))
 thread = 32
 %alias dk docker run -it --rm --security-opt label=disable -v $PWD:/app %s
-pprint(data)
+# pprint(data)
 image_sratool = "quay.io/biocontainers/sra-tools:2.10.8--pl526haddd2b5_0"
 
 
@@ -52,4 +52,15 @@ def download():
             !cat {fastqs_r2} > {data_folder}/{proj}_r2.raw.fastq
 
 
-download()
+def prepareReference():
+    from pipelines.prepare_reference import mRNAFilter
+    for species in data['species']:
+        data_folder = f"data/{species}"
+        mRNAFilter(data_folder, data['species']['mrna_min_length'])
+        # I don't know what it is
+        awk_query = '\'BEGIN{FS="\t";OFS="\t"}{split($NF,a," ");pfx="";s="";for(i=1;i<=length(a);i+=2){if(a[i]=="transcript_id"){pfx=a[i]" "a[i+1]}else{s=s" "a[i]" "a[i+1]}}if(pfx==""){print "[WARN] line "NR" without transcript_id!" > "/dev/stderr"}else{$NF=pfx""s;print$0} }\''
+        !awk {awk_query} {data_folder}/flux_simulator.gtf > {data_folder}/flux_simulator_clean.gtf
+
+
+# download()
+prepareReference()
