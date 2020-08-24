@@ -127,8 +127,7 @@ def simulation():
 
             # simulation
             %dk {data['images']['fluxsimulator']} \
-                flux-simulator --threads {thread} -p {data_folder}/{basename}.par -l -s \
-                > {data_folder}/{basename}.out 2> {data_folder}/{basename}.err 
+                flux-simulator --threads {thread} -p {data_folder}/{basename}.par -l -s
 
             # split reads
             splitInterleavedReads(f"{data_folder}/{basename}.fastq", f"{data_folder}/../{proj}")
@@ -206,8 +205,7 @@ def assemble():
                 if method == 'trinity':
                     %dk {image} \
                         Trinity --max_memory {memory}G --CPU {thread} --seqType fq {strand_trinity} --min_contig_length {min_len} \
-                        --left {basename}_r1.trim.fastq --right {basename}_r2.trim.fastq --output {base_assemble_folder} \
-                        > {base_assemble_folder}/log 2> {base_assemble_folder}/logerr
+                        --left {basename}_r1.trim.fastq --right {basename}_r2.trim.fastq --output {base_assemble_folder}
                     !cp {base_assemble_folder}/Trinity.fasta {basename}.trinity.fasta
                     !rm -rf {base_assemble_folder}
 
@@ -215,8 +213,7 @@ def assemble():
                 elif method == 'rnaspades':
                     %dk -u root {image} \
                         rnaspades.py -t {thread} -m {memory} {strand_rnaspades} \
-                        -1 {basename}_r1.trim.fastq -2 {basename}_r2.trim.fastq -o {base_assemble_folder} \
-                        > {base_assemble_folder}/log 2> {base_assemble_folder}/logerr
+                        -1 {basename}_r1.trim.fastq -2 {basename}_r2.trim.fastq -o {base_assemble_folder}
                     fasta_length_filter(f"{base_assemble_folder}/transcripts.fasta", f"{basename}.rnaspades.fasta", min_len)
                     !rm -rf {base_assemble_folder}
 
@@ -224,13 +221,70 @@ def assemble():
                 elif method == 'transabyss':
                     %dk {image} bash -c "ln -s /usr/local/bin/ /usr/local/lib/python3.8/site-packages/bin && \
                             transabyss --threads {thread} --length {min_len} {strand_transabyss} \
-                            --pe {basename}_r1.trim.fastq {basename}_r2.trim.fastq \
-                            --outdir {base_assemble_folder}/log > {base_assemble_folder}/log 2> {base_assemble_folder}/logerr"
+                            --pe {basename}_r1.trim.fastq {basename}_r2.trim.fastq --outdir {base_assemble_folder}/log"
+
                     !cp {base_assemble_folder}/transabyss-final.fa {basename}.transabyss.fasta
                     !rm -rf {base_assemble_folder}
 
                 else:
                     print("error")
+
+
+def quantification():
+    """
+    Transcriptome Quantification
+
+    Input: data/{species}/xx.{method_assemble}.fasta data/{species}/xx_r{1,2}.fastq
+    Output: data/{species}/xx.{method_assemble}.{method_quantify}.tsv
+    """
+    for species in data['species']:
+        data_folder = f"{base_folder}/{species}"
+        for ds in data['datasets']:
+            ori_seq = f"{data_folder}/{ds}"
+            # TOCHECK: Using different strand when proceed mouse data with experiment fastq
+            if ds.startswith("exp") and species == "mouse":
+                strand_kallisto = "--rf-stranded"
+                strand_rsem = "reverse"
+                #SS_SALMON="-l ISR"
+            else:
+                strand_kallisto = ""
+                strand_rsem = "none"
+
+            for method_assemble in data['assemble']:
+                whole_seq = f"{data_folder}/{ds}.{method_assemble}.fasta"
+                for method_quant in data['quant']:
+                    image = data['images'][method_quant]
+                    data_quant_folder = f"{base_folder}/{species}/{method_quant}"
+                    name = f"{ds}.{method_assemble}.{method_quant}"
+                    !mkdir -p {data_quant_folder}
+
+                    # kallisto
+                    if method_quant == "kallisto":
+                        %dk {image} \
+                            kallisto index -i {data_quant_folder}/{name}.index -k {data['quant'][method_quant]['kmer']} {whole_seq}
+                        %dk {image} \
+                            kallisto quant -i {data_quant_folder}/{name}.index -t {thread} {strand_kallisto} \
+                                 -o {data_quant_folder} {ori_seq}_r1.fastq {ori_seq}_r2.fastq
+                        !mv {data_quant_folder}/abundance.tsv {data_folder}/{name}.tsv
+
+                    # rsem
+                    elif method_quant == "rsem":
+                        %dk {image} \
+                            rsem-prepare-reference -p {thread} --bowtie2 {whole_seq} {data_quant_folder}/{name}.index
+                        %dk {image} \
+                            rsem-calculate-expression --strandedness {strand_rsem} -p {thread} --bowtie2 --time --paired-end  \
+                                {ori_seq}_r1.fastq {ori_seq}_r2.fastq {data_quant_folder}/{name}.index {data_quant_folder}/{name}
+                        !mv {data_quant_folder}/{name}.isoforms.results {data_folder}/{name}.tsv
+
+                    # salmon
+                    elif method_quant == "salmon":
+                        %dk {image} \
+                            salmon index -i {data_quant_folder}/{name}.index -t {whole_seq} --type quasi \
+                                -k {data['quant'][method_quant]['kmer']}
+                        %dk {image} \
+                            salmon quant -i {data_quant_folder}/{name}.index -p {thread} -l A \
+                                -1 {ori_seq}_r1.fastq -2 {ori_seq}_r2.fastq -o {data_quant_folder}
+                        !mv {data_quant_folder}/quant.sf {data_folder}/{name}.tsv
 
 
 if args.method in ["all", "download"]:
@@ -244,3 +298,6 @@ if args.method in ["all", "trim"]:
     trimmomatic()
 if args.method in ["all", "assemble"]:
     assemble()
+if args.method in ["all", "quantify"]:
+    quantification()
+# ipython pipeline.ipy -- --method=quantify

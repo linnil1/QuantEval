@@ -40,12 +40,19 @@ datasets:
   - exphigh
 
 assemble:
-  trinity:
-    minlen: 500
-  rnaspades:
-    minlen: 500
-  transabyss:
-    minlen: 500
+    trinity:
+        minlen: 500
+    rnaspades:
+        minlen: 500
+    transabyss:
+        minlen: 500
+
+quant:
+    kallisto:
+        kmer: 31
+    rsem: null
+    salmon:
+        kmer: 31
 
 images:
     trinity:        "trinityrnaseq/trinityrnaseq:2.11.0"
@@ -55,3 +62,8 @@ images:
     fluxsimulator:  "quay.io/biocontainers/flux-simulator:1.2.1--2"
     fastqc:         "quay.io/biocontainers/fastqc:0.11.9--0"
     trimmomatic:    "quay.io/biocontainers/trimmomatic:0.39--1"
+    kallisto:       "quay.io/biocontainers/kallisto:0.46.2--h4f7b962_0"
+    # rsem:           "quay.io/biocontainers/rsem:1.3.3--pl526ha52163a_0"
+    # check version by %dk {image} bash -c "rsem-calculate-expression --version && bowtie2 --version"
+    rsem:           "quay.io/biocontainers/mulled-v2-3d754d866ba8c7a580bc674149777fc6b353add4:a29ddb91046557c57a1fe66644dd64dee62250c1-0"
+    salmon:         "quay.io/biocontainers/salmon:0.11.3--h86b0361_2"
