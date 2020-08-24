@@ -41,12 +41,17 @@ datasets:
 
 assemble:
   trinity:
-    image: "trinityrnaseq/trinityrnaseq:2.11.0"
     minlen: 500
   rnaspades:
-    image: "biocontainers/spades:v3.13.1_cv1"
     minlen: 500
   transabyss:
-    image: "quay.io/biocontainers/transabyss:2.0.1--py_6"
     minlen: 500
 
+images:
+    trinity:        "trinityrnaseq/trinityrnaseq:2.11.0"
+    rnaspades:      "biocontainers/spades:v3.13.1_cv1"
+    transabyss:     "quay.io/biocontainers/transabyss:2.0.1--py_6"
+    sratool:        "quay.io/biocontainers/sra-tools:2.10.8--pl526haddd2b5_0"
+    fluxsimulator:  "quay.io/biocontainers/flux-simulator:1.2.1--2"
+    fastqc:         "quay.io/biocontainers/fastqc:0.11.9--0"
+    trimmomatic:    "quay.io/biocontainers/trimmomatic:0.39--1"
