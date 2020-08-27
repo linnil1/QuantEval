@@ -211,7 +211,11 @@ def assemble():
     for species in data['species']:
         data_folder = f"{base_folder}/{species}"
         for ds in data['datasets']:
+            # create soft link to mRNA sequences
             basename = f"{data_folder}/{ds}"
+            !ln -s mRNA.fasta {basename}.mRNA.fasta
+
+            # Run all assemble methods
             for method in data['assemble']:
                 # TODO check: Using different strand when proceed mouse data with experiment fastq
                 if ds.startswith("exp") and species == "mouse":
@@ -289,13 +293,10 @@ def quantification(reference=True):
                 strand_rsem = "none"
 
             for method_assemble in [*data['assemble'], "mRNA"]:
-                if method_assemble == "mRNA":
-                    whole_seq = f"{data_folder}/{method_assemble}.fasta"
-                    if not reference:
-                        continue
-                else:
-                    whole_seq = f"{data_folder}/{ds}.{method_assemble}.fasta"
+                if method_assemble == "mRNA" and not reference:
+                    continue
 
+                whole_seq = f"{data_folder}/{ds}.{method_assemble}.fasta"
                 for method_quant in data['quant']:
                     image = data['images'][method_quant]
                     data_quant_folder = f"{base_folder}/{species}/{method_quant}"
@@ -401,6 +402,35 @@ def blastSelf():
                     blastn -db {mrna_blast}      -query {assembled_seq} -outfmt 6 -out {blast_name}.contig_to_mrna.tsv
 
 
+def checkAssembleQuality():
+    """
+    Check assembled transcriptome quality by Transrate
+
+    Inputs
+    ------
+    Assembled sequences: data/{species}/xx.{method_assemble}.fasta
+
+    Outputs
+    -------
+    Transrate Output:
+    """
+    for species in data['species']:
+        data_folder = f"{base_folder}/{species}"
+        transrate_folder = f"{data_folder}/transrate"
+        !mkdir -p {transrate_folder}
+        for ds in data['datasets']:
+            ori_seq = f"{data_folder}/{ds}"
+            for method_assemble in [*data['assemble'], "mRNA"]:
+                assembled_seq = f"{data_folder}/{ds}.{method_assemble}.fasta"
+                %dk {data['images']['transrate']} \
+                    transrate --assembly {ori_seq}.{method_assemble}.fasta --threads {thread} \
+                    --output {transrate_folder}/{ds}.{method_assemble} \
+                    --left {ori_seq}_r1.fastq --right {ori_seq}_r2.fastq
+                ! mv {transrate_folder}/{ds}.{method_assemble}/{ds}.{method_assemble}/contigs.csv \
+                     {data_folder}/{ds}.{method_assemble}.transrate.csv
+
+
+# main
 if args.method in ["all", "download"]:
     download()
 if args.method in ["all", "simulation"]:
@@ -418,5 +448,6 @@ if args.method in ["all", "answer"]:
     answerExp()
 if args.method in ["all", "postassemble"]:
     blastSelf()
+    checkAssembleQuality()
 
 # ipython pipeline.ipy -- --method=quantify

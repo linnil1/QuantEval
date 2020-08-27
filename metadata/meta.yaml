@@ -59,8 +59,8 @@ blast:
     evalue: 1e-5
 
 images:
-    trinity:        "trinityrnaseq/trinityrnaseq:2.11.0"
-    rnaspades:      "biocontainers/spades:v3.13.1_cv1"
+    trinity:        "docker.io/trinityrnaseq/trinityrnaseq:2.11.0"
+    rnaspades:      "docker.io/biocontainers/spades:v3.13.1_cv1"
     transabyss:     "quay.io/biocontainers/transabyss:2.0.1--py_6"
     sratool:        "quay.io/biocontainers/sra-tools:2.10.8--pl526haddd2b5_0"
     fluxsimulator:  "quay.io/biocontainers/flux-simulator:1.2.1--2"
@@ -72,3 +72,5 @@ images:
     rsem:           "quay.io/biocontainers/mulled-v2-3d754d866ba8c7a580bc674149777fc6b353add4:a29ddb91046557c57a1fe66644dd64dee62250c1-0"
     salmon:         "quay.io/biocontainers/salmon:0.11.3--h86b0361_2"
     blast:          "quay.io/biocontainers/blast:2.9.0--pl526he19e7b1_7"
+    # transrate:      "quay.io/biocontainers/transrate:1.0.3--h516909a_0"
+    transrate:      "docker.io/pgcbioinfo/transrate:1.0.3"
