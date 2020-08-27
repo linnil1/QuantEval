@@ -1,6 +1,8 @@
 import os
 import re
 from Bio import SeqIO
+import pandas as pd
+import numpy as np
 
 
 def mRNAFilter(basedir, refdir, simdir, shortest_length):
@@ -15,6 +17,7 @@ def mRNAFilter(basedir, refdir, simdir, shortest_length):
     Output:
     * {basedir}/chromosome.fasta
     * {basedir}/mRNA.gtf
+    * {basedir}/mRNA.fasta
     * {simdir}/flux_simulator.gtf
     * {simdir}/chromosome/*.fasta
 
@@ -225,6 +228,54 @@ def fasta_length_filter(file_fasta, file_result, threshold):
         for seq in SeqIO.parse(file_fasta, 'fasta'):
             if len(seq.seq) >= threshold:
                 print(seq.format('fasta'), file=result, end="")
+
+
+def average_tpm(files_abundance, output):
+    """
+    Average the tmp created by kallisto, rsem and salmon
+
+    Parameters
+    ----------
+    files_abundance: dict
+        key: quantification method
+        value: path to abundance.tsv
+    output: str
+        The path you store the average value. Format: tsv.
+    """
+    data = {}
+    for method, path in files_abundance.items():
+        # read kallisto
+        if method == 'kallisto':
+            kallisto = pd.read_table(path, sep='\t')
+            kallisto = kallisto.rename(columns={'target_id': 'name', 'tpm': 'kallisto_tpm', 'est_counts': 'kallisto_count'})
+            data['kallisto'] = kallisto.loc[:, ('name', 'kallisto_tpm', 'kallisto_count')]
+
+        # read rsem
+        elif method == 'rsem':
+            rsem = pd.read_table(path, sep='\t')
+            rsem = rsem.rename(columns={'transcript_id': 'name', 'TPM': 'rsem_tpm', 'expected_count': 'rsem_count'})
+            data['rsem'] = rsem.loc[:, ('name', 'rsem_tpm', 'rsem_count')]
+
+        # read salmon
+        elif method == 'salmon':
+            salmon = pd.read_table(path, sep='\t')
+            salmon = salmon.rename(columns={'Name': 'name', 'TPM': 'salmon_tpm', 'NumReads': 'salmon_count'})
+            data['salmon'] = salmon.loc[:, ('name', 'salmon_tpm', 'salmon_count')]
+
+    # Only reserve the transcripts that got by all three methods
+    tables = list(data.values())
+    tmp = tables[0]
+    for d in tables[1:]:
+        tmp = pd.merge(tmp, d, on='name', how='inner')
+
+    # average
+    tmp['answer_tpm']   = np.mean([tmp[f'{method}_tpm']   for method in data.keys()], axis=0)
+    tmp['answer_count'] = np.mean([tmp[f'{method}_count'] for method in data.keys()], axis=0)
+
+    # save it
+    expression_table = tmp.loc[:, ('name', 'answer_tpm', 'answer_count')]
+    expression_table = expression_table.round({'answer_tpm': 3, 'answer_count': 3})
+    expression_table.to_csv(output, sep='\t', index=False)
     
 
 if __name__ == '__main__':

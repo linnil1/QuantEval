@@ -79,6 +79,7 @@ def prepareReference():
     Output:
     * chromosome.fasta
     * mRNA.gtf
+    * mRNA.fasta
     * simulation/chromosome/*.fasta
     * simulation/flux_simulator.gtf
     * simulation/flux_simulator_clean.gtf
@@ -230,12 +231,23 @@ def assemble():
                     print("error")
 
 
-def quantification():
+def quantification(reference=True):
     """
     Transcriptome Quantification
 
-    Input: data/{species}/xx.{method_assemble}.fasta data/{species}/xx_r{1,2}.fastq
-    Output: data/{species}/xx.{method_assemble}.{method_quantify}.tsv
+    Parameters
+    ----------
+    reference: bool, default = True
+        Run quantification on mRNA(reference).
+
+    Input
+    -----
+    Assembled sequences: data/{species}/xx.{method_assemble}.fasta
+    Reads: data/{species}/xx_r{1,2}.fastq
+
+    Output
+    ------
+    Abundance tsv: data/{species}/xx.{method_assemble}.{method_quantify}.tsv
     """
     for species in data['species']:
         data_folder = f"{base_folder}/{species}"
@@ -250,8 +262,14 @@ def quantification():
                 strand_kallisto = ""
                 strand_rsem = "none"
 
-            for method_assemble in data['assemble']:
-                whole_seq = f"{data_folder}/{ds}.{method_assemble}.fasta"
+            for method_assemble in [*data['assemble'], 'mRNA']:
+                if method_assemble == 'mRNA':
+                    whole_seq = f"{data_folder}/{method_assemble}.fasta"
+                    if not reference:
+                        continue
+                else:
+                    whole_seq = f"{data_folder}/{ds}.{method_assemble}.fasta"
+
                 for method_quant in data['quant']:
                     image = data['images'][method_quant]
                     data_quant_folder = f"{base_folder}/{species}/{method_quant}"
@@ -287,6 +305,31 @@ def quantification():
                         !mv {data_quant_folder}/quant.sf {data_folder}/{name}.tsv
 
 
+def answerExp():
+    """
+    Transcriptome Quantification
+
+    Parameters
+    ----------
+    reference: bool, default = True
+        Run quantification on mRNA(reference).
+
+    Input
+    -----
+    Assembled sequences: data/{species}/xx.{method_assemble}.fasta
+    Reads: data/{species}/xx_r{1,2}.fastq
+    """
+    from pipelines.utils import average_tpm
+    for species in data['species']:
+        data_folder = f"{base_folder}/{species}"
+        for ds in data['datasets']:
+            if not ds.startswith("exp"):
+                continue
+            files = {method_quant: f"{data_folder}/{ds}.mRNA.{method_quant}.tsv"
+                        for method_quant in data['quant']}
+            average_tpm(files, f"{data_folder}/{ds}.mRNA.answer.tsv")
+
+
 if args.method in ["all", "download"]:
     download()
 if args.method in ["all", "simulation"]:
@@ -299,5 +342,7 @@ if args.method in ["all", "trim"]:
 if args.method in ["all", "assemble"]:
     assemble()
 if args.method in ["all", "quantify"]:
-    quantification()
+    quantification(reference=True)
+if args.method in ["all", "answer"]:
+    answerExp()
 # ipython pipeline.ipy -- --method=quantify
