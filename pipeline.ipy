@@ -10,9 +10,9 @@ import argparse
 
 # Commmand line parameters
 parser = argparse.ArgumentParser(description="Pipeline of quantification of de-novo assembly")
-parser.add_argument("--method",       type=str, default="all", help="What step you want to run. Default: all.")
-parser.add_argument("-t", "--thread", type=int, default=32, help="Threads")
-parser.add_argument("-m", "--memory", type=int, default=300, help="Memory")
+parser.add_argument("--method",       type=str, default="all",  help="What step you want to run. Default: all.")
+parser.add_argument("-t", "--thread", type=int, default=32,     help="Threads")
+parser.add_argument("-m", "--memory", type=int, default=300,    help="Memory")
 parser.add_argument("--meta",         type=str, default="metadata/meta.yaml", help="The path of metadata")
 parser.add_argument("--base",         type=str, default="data", help="The path to store your data")
 args = parser.parse_args()
@@ -28,13 +28,13 @@ base_folder = args.base
 def download():
     """
     Download data from ensembl and ncbi
-    Output:
-        reference:
-        * data/{species}/download/genome.fasta
-        * data/{species}/download/transcriptome.fasta
-        * data/{species}/download/annotation.gff
-        experiments:
-        * data/{species}/xx.fastq
+
+    Output
+    ------
+    reference genome:       data/{species}/download/genome.fasta
+    reference transcripts:  data/{species}/download/transcriptome.fasta
+    reference annotation:   data/{species}/download/annotation.gff
+    experiment fastq file:  data/{species}/xx.fastq
     """
     for species in data['species']:
         meta = data['species'][species]
@@ -70,19 +70,26 @@ def prepareReference():
     Filter out short and mito mrna from gnome and transcriptome and
     Prepare data for simulation
 
-    prefix: data/{species}/
+    All files have prefix 'data/{species}/'
 
-    Input:
-    * download/genome.fasta
-    * download/transcriptome.fasta
-    * download/annotation.gff
-    Output:
-    * chromosome.fasta
-    * mRNA.gtf
-    * mRNA.fasta
-    * simulation/chromosome/*.fasta
-    * simulation/flux_simulator.gtf
-    * simulation/flux_simulator_clean.gtf
+    Inputs
+    ------
+    The references data downloaded from web
+        * download/genome.fasta
+        * download/transcriptome.fasta
+        * download/annotation.gff
+
+    Outputs
+    -------
+    Filtered mrna transcriptome data
+        * chromosome.fasta
+        * mRNA.gtf
+        * mRNA.fasta
+
+    The files for simulation
+        * simulation/chromosome/*.fasta
+        * simulation/flux_simulator.gtf
+        * simulation/flux_simulator_clean.gtf
     """
 
     from pipelines.utils import mRNAFilter
@@ -102,23 +109,24 @@ def simulation():
     """
     Simulate the reads sequencing from transcriptome.fasta
 
-    prefix: data/{species}/
+    All files have prefix 'data/{species}/'
 
-    Input: 
+    Inputs
+    ------
     * simulation/chromosome/*.fasta
     * simulation/flux_simulator.gtf
     * simulation/flux_simulator_clean.gtf
     * metadata/flux_simulator_*.par
     * metadata/flux_simulator_*.pro
 
-    Output: 
-    * simulation/*
-    * simlow_r1.fastq,simlow_r2.fastq
-    * simhigh_r1.fastq,simhigh_r2.fastq
+    Outputs
+    -------
+    Simulation output:  simulation/*
+    Reads data:         xx_r1.fastq, xx_r2.fastq
     """
     from pipelines.utils import splitInterleavedReads
     for species in data['species']:
-        sim_projects = ['simlow', 'simhigh']
+        sim_projects = ["simlow", "simhigh"]
         for proj in sim_projects:
             data_folder = f"{base_folder}/{species}/simulation"
             file_simulation = data['species'][species][proj + '_file']
@@ -137,8 +145,14 @@ def simulation():
 def fastqc():
     """
     Fastqc(Inspect reads quality)
-    Input: data/{species}/xx.fastq
-    Output: data/{species}/fastqc/
+
+    Inputs
+    ------
+    Reads data: data/{species}/xx.fastq
+
+    Outputs
+    -------
+    FastQC output: data/{species}/fastqc/
     """
     for species in data['species']:
         data_folder = f"{base_folder}/{species}"
@@ -151,9 +165,16 @@ def fastqc():
 
 def trimmomatic():
     """
-    trimmomatic(Remove low quality reads)
-    Input: data/{species}/xx.fastq
-    Output: data/{species}/xx.trim.fastq, data/{species}/trimmed/
+    Trimmomatic(Remove low quality reads)
+
+    Inputs
+    ------
+    Reads data: data/{species}/xx.fastq
+
+    Outputs
+    -------
+    Trimmed reads data: data/{species}/xx.trim.fastq
+    Trimmomatic output: data/{species}/trimmed/
     """
     for species in data['species']:
         data_folder = f"{base_folder}/{species}"
@@ -177,8 +198,13 @@ def assemble():
     Three methods are used:
         trinity, rnaspades, transabyss
 
-    Input: data/{species}/xx_r{1,2}.trim.fastq
-    Output: data/{species}/xx.{assemble_method}.fasta
+    Inputs
+    ------
+    Reads data: data/{species}/xx_r{1,2}.trim.fastq
+
+    Outputs
+    -------
+    Assembled sequences: data/{species}/xx.{assemble_method}.fasta
     """
     from pipelines.utils import fasta_length_filter
 
@@ -187,7 +213,7 @@ def assemble():
         for ds in data['datasets']:
             basename = f"{data_folder}/{ds}"
             for method in data['assemble']:
-                # TOCHECK: Using different strand when proceed mouse data with experiment fastq
+                # TODO check: Using different strand when proceed mouse data with experiment fastq
                 if ds.startswith("exp") and species == "mouse":
                     strand_trinity = "--SS_lib_type RF"
                     strand_transabyss = "--SS"
@@ -203,7 +229,7 @@ def assemble():
                 !mkdir -p {base_assemble_folder}
 
                 # trinity
-                if method == 'trinity':
+                if method == "trinity":
                     %dk {image} \
                         Trinity --max_memory {memory}G --CPU {thread} --seqType fq {strand_trinity} --min_contig_length {min_len} \
                         --left {basename}_r1.trim.fastq --right {basename}_r2.trim.fastq --output {base_assemble_folder}
@@ -211,7 +237,7 @@ def assemble():
                     !rm -rf {base_assemble_folder}
 
                 # rnaspades
-                elif method == 'rnaspades':
+                elif method == "rnaspades":
                     %dk -u root {image} \
                         rnaspades.py -t {thread} -m {memory} {strand_rnaspades} \
                         -1 {basename}_r1.trim.fastq -2 {basename}_r2.trim.fastq -o {base_assemble_folder}
@@ -219,7 +245,7 @@ def assemble():
                     !rm -rf {base_assemble_folder}
 
                 # transabyss
-                elif method == 'transabyss':
+                elif method == "transabyss":
                     %dk {image} bash -c "ln -s /usr/local/bin/ /usr/local/lib/python3.8/site-packages/bin && \
                             transabyss --threads {thread} --length {min_len} {strand_transabyss} \
                             --pe {basename}_r1.trim.fastq {basename}_r2.trim.fastq --outdir {base_assemble_folder}/log"
@@ -240,20 +266,20 @@ def quantification(reference=True):
     reference: bool, default = True
         Run quantification on mRNA(reference).
 
-    Input
-    -----
+    Inputs
+    ------
     Assembled sequences: data/{species}/xx.{method_assemble}.fasta
     Reads: data/{species}/xx_r{1,2}.fastq
 
-    Output
-    ------
+    Outputs
+    -------
     Abundance tsv: data/{species}/xx.{method_assemble}.{method_quantify}.tsv
     """
     for species in data['species']:
         data_folder = f"{base_folder}/{species}"
         for ds in data['datasets']:
             ori_seq = f"{data_folder}/{ds}"
-            # TOCHECK: Using different strand when proceed mouse data with experiment fastq
+            # TODO check: Using different strand when proceed mouse data with experiment fastq
             if ds.startswith("exp") and species == "mouse":
                 strand_kallisto = "--rf-stranded"
                 strand_rsem = "reverse"
@@ -262,8 +288,8 @@ def quantification(reference=True):
                 strand_kallisto = ""
                 strand_rsem = "none"
 
-            for method_assemble in [*data['assemble'], 'mRNA']:
-                if method_assemble == 'mRNA':
+            for method_assemble in [*data['assemble'], "mRNA"]:
+                if method_assemble == "mRNA":
                     whole_seq = f"{data_folder}/{method_assemble}.fasta"
                     if not reference:
                         continue
