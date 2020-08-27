@@ -356,6 +356,51 @@ def answerExp():
             average_tpm(files, f"{data_folder}/{ds}.mRNA.answer.tsv")
 
 
+def blastSelf():
+    """
+    Self blast assembled transcriptome
+
+    Input
+    -----
+    Assembled sequences: data/{species}/xx.{method_assemble}.fasta
+    mRNA : data/{species}/mRNA.fasta
+
+    Output:
+    Blast data: data/{species}/blast
+    Blast self result: data/{species}/{ds}.{method_assemble}.blast.self.tsv
+    Blast mrna to contig result: data/{species}/{ds}.{method_assemble}.blast.mrna_to_contig.tsv
+    Blast contig to mrna result: data/{species}/{ds}.{method_assemble}.blast.contig_to_mrna.tsv
+    """
+    for species in data['species']:
+        # mrna database
+        data_folder = f"{base_folder}/{species}"
+        mrna_seq = f"{data_folder}/mRNA.fasta"
+        mrna_blast = f"{data_folder}/blast/mRNA"
+        !mkdir -p {data_folder}/blast
+        %dk {data['images']['blast']} \
+            makeblastdb -in {mrna_seq} -dbtype nucl -out {mrna_blast}
+
+        for ds in data['datasets']:
+            for method_assemble in data['assemble']:
+                # mrna database
+                assembled_seq = f"{data_folder}/{ds}.{method_assemble}.fasta"
+                assembled_blast = f"{data_folder}/blast/{ds}.{method_assemble}"
+                blast_name = f"{data_folder}/{ds}.{method_assemble}.blast"
+                %dk {data['images']['blast']} \
+                    makeblastdb -in {assembled_seq} -dbtype nucl -out {assembled_blast}
+
+                # blast self
+                %dk {data['images']['blast']} \
+                    blastn -db {assembled_blast} -query {assembled_seq} -outfmt 6 -out {blast_name}.self.tsv \
+                    -evalue {data['blast']['evalue']} -perc_identity {data['blast']['identity']}
+                # blast mrna to contig
+                %dk {data['images']['blast']} \
+                    blastn -db {assembled_blast} -query {mrna_seq}      -outfmt 6 -out {blast_name}.mrna_to_contig.tsv
+                # blast contig to mrna
+                %dk {data['images']['blast']} \
+                    blastn -db {mrna_blast}      -query {assembled_seq} -outfmt 6 -out {blast_name}.contig_to_mrna.tsv
+
+
 if args.method in ["all", "download"]:
     download()
 if args.method in ["all", "simulation"]:
@@ -371,4 +416,7 @@ if args.method in ["all", "quantify"]:
     quantification(reference=True)
 if args.method in ["all", "answer"]:
     answerExp()
+if args.method in ["all", "postassemble"]:
+    blastSelf()
+
 # ipython pipeline.ipy -- --method=quantify

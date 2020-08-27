@@ -50,9 +50,13 @@ assemble:
 quant:
     kallisto:
         kmer: 31
-    rsem: null
+    rsem: {}
     salmon:
         kmer: 31
+
+blast:
+    identity: 95
+    evalue: 1e-5
 
 images:
     trinity:        "trinityrnaseq/trinityrnaseq:2.11.0"
@@ -67,3 +71,4 @@ images:
     # check version by %dk {image} bash -c "rsem-calculate-expression --version && bowtie2 --version"
     rsem:           "quay.io/biocontainers/mulled-v2-3d754d866ba8c7a580bc674149777fc6b353add4:a29ddb91046557c57a1fe66644dd64dee62250c1-0"
     salmon:         "quay.io/biocontainers/salmon:0.11.3--h86b0361_2"
+    blast:          "quay.io/biocontainers/blast:2.9.0--pl526he19e7b1_7"
