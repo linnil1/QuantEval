@@ -126,10 +126,12 @@ def simulation():
     """
     from pipelines.utils import splitInterleavedReads
     for species in data['species']:
-        sim_projects = ["simlow", "simhigh"]
-        for proj in sim_projects:
+        for ds in data['datasets']:
+            if not ds.startswith("sim"):
+                continue
+
             data_folder = f"{base_folder}/{species}/simulation"
-            file_simulation = data['species'][species][proj + '_file']
+            file_simulation = data['species'][species][ds + '_file']
             !cp {file_simulation}* {data_folder}
             basename = os.path.basename(file_simulation)
             print("Simulate", basename)
@@ -334,17 +336,18 @@ def quantification(reference=True):
 
 def answerExp():
     """
-    Transcriptome Quantification
+    Generate answer to experiments fastq.
 
-    Parameters
-    ----------
-    reference: bool, default = True
-        Run quantification on mRNA(reference).
+    Averaging tpm from three quantification methods
+    (All mapped to mRNA) are set as answer.
 
-    Input
-    -----
-    Assembled sequences: data/{species}/xx.{method_assemble}.fasta
-    Reads: data/{species}/xx_r{1,2}.fastq
+    Inputs
+    ------
+    Quantification tsv files: data/{species}/xx.mRNA.{method_quant}.tsv
+
+    Outputs
+    -------
+    Answer tsv files: data/{species}/xx.mRNA.answer.tsv
     """
     from pipelines.utils import average_tpm
     for species in data['species']:
@@ -355,6 +358,36 @@ def answerExp():
             files = {method_quant: f"{data_folder}/{ds}.mRNA.{method_quant}.tsv"
                         for method_quant in data['quant']}
             average_tpm(files, f"{data_folder}/{ds}.mRNA.answer.tsv")
+
+
+def answerSim():
+    """
+    Generate answer to simulation fastq.
+
+    Inputs
+    ------
+    Quantification tsv files: data/{species}/xx.mRNA.{method_quant}.tsv
+    Simulation data: data/{species}/simulation/xx.pro
+    Simulation data: data/{species}/simulation/xx.lib
+    unparied reads: data/{species}/trimmed/simlow_r1.unpaired.fastq
+
+    Outputs
+    -------
+    Answer tsv files: data/{species}/xx.mRNA.answer.tsv
+    """
+    from pipelines.utils import reference_tpm
+
+    for species in data['species']:
+        data_folder = f"{base_folder}/{species}"
+        for ds in data['datasets']:
+            if not ds.startswith("sim"):
+                continue
+            name_simulation = os.path.basename(data['species'][species][ds + '_file'])
+            file_pro = f"{data_folder}/simulation/{name_simulation}.pro"
+            file_lib = f"{data_folder}/simulation/{name_simulation}.lib"
+            file_unpaired = [f"{data_folder}/trimmed/{ds}_r1.unpaired.fastq",
+                             f"{data_folder}/trimmed/{ds}_r2.unpaired.fastq"]
+            reference_tpm(file_pro, file_lib, file_unpaired, f"{data_folder}/{ds}.mRNA.answer.tsv")
 
 
 def blastSelf():
@@ -446,6 +479,7 @@ if args.method in ["all", "quantify"]:
     quantification(reference=True)
 if args.method in ["all", "answer"]:
     answerExp()
+    answerSim()
 if args.method in ["all", "postassemble"]:
     blastSelf()
     checkAssembleQuality()

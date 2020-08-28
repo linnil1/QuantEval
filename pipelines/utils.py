@@ -252,6 +252,9 @@ def average_tpm(files_abundance, output):
     """
     Average the tmp created by kallisto, rsem and salmon
 
+    Example usage:
+        average_tpm({'kallisto': "/data/abundance.tsv"}, "merged.tsv")
+
     Parameters
     ----------
     files_abundance: dict
@@ -302,9 +305,161 @@ def average_tpm(files_abundance, output):
     expression_table.to_csv(output, sep="\t", index=False)
 
 
+def readsCount(files_reads):
+    """
+    Count the reads in input fastq files
+
+    Parameters
+    ----------
+    files_read: list of str
+        The list of path to the input file
+
+    Returns
+    -------
+    table_count: pd.Dataframe
+        The table that have two colnums: name and counts
+    """
+    # count sequence ID in fastq
+    count = {}
+    for f in files_reads:
+        for seq in SeqIO.parse(f, 'fastq'):
+            name = re.match('\S+?:\S+?:\S+?:(\S+?):', seq.id).group(1)
+            if name in count:
+                count[name] += 1
+            else:
+                count[name] = 1
+
+    # store in table
+    read_count = pd.DataFrame.from_dict(count, orient='index')
+    read_count.columns = ['count']
+    read_count['name'] = read_count.index.tolist()
+    return read_count
+
+
+def readLib(file_lib):
+    """
+    Collect sequences length distribution in simulation
+
+    Parameters
+    ----------
+    files_lib: str
+        The path to the flux_simulator.pro
+
+    Returns
+    -------
+    count_dict: dict
+        The distribution of length of sequences.
+        key: length
+        value: counts
+    """
+    count_dict = {}
+    for lib_in in open(file_lib):
+        data = lib_in.rstrip().split()
+        start, end, count = int(data[0]), int(data[1]), int(data[-1])
+        length = abs(start - end)
+        if length in count_dict:
+            count_dict[length] += count
+        else:
+            count_dict[length] = count
+    return count_dict
+
+
+def estimate_eff_length(original_length, count_dict):
+    """
+    Calculate effective length of each transcript
+
+    Parameters
+    ----------
+    original_length: array of int
+        Original length of transcripts
+    count_dict: dict
+        key: length of transcripts
+        value: count of transcripts with length = key
+
+    Returns
+    -------
+    effective_length: array of int
+    """
+    # Calculate probility
+    total_count = float(sum(count_dict.keys()))
+    max_frag = max(count_dict.values())
+    pdf = np.zeros(max_frag + 1)
+    pdf[list(count_dict.keys())] = np.array(list(count_dict.values())) / max_frag
+
+    # define the formula of effective length
+    def eff_len(L, pmf):
+        c_len = np.arange(0, min(L + 1, len(pmf)))
+        effective_length = np.sum(pmf[c_len] * (L - c_len + 1))
+        return effective_length
+
+    # apply
+    vfunc = np.vectorize(eff_len, excluded=['pmf'])
+    return vfunc(L=original_length, pmf=pdf)
+
+
+def reference_tpm(flux_simulator_pro, flux_simulator_lib, files_unpaired_reads, file_output):
+    """
+    Calculate the reference TMP by reading flux_simulator paramters
+
+    The answer TPM is (simulation count - unpaired count) / effective length
+
+    Parameters
+    ----------
+    flux_simulator_pro: str
+        The path of flux_simulator.pro
+    flux_simulator_lib: str
+        The path of flux_simulator.pro
+    files_unpaired_reads: list of str
+        The path of read files
+    file_output: str
+        The path to save answer tsv
+    """
+    # Read from pro
+    flux_columns = ['locus', 'name', 'conding', 'length', 'molecular_fraction', 'molecular_count',
+                    'fragment_fraction', 'fragment_count', 'read_fraction', 'read_count', 'covered',
+                    'chi_square', 'variation']
+    flux_simulator = pd.read_table(flux_simulator_pro, sep='\t', header=None, names=flux_columns)
+
+    # Get sequences length distribution from lib
+    count_dict = readLib(flux_simulator_lib)
+
+    # Get read counts
+    unpaired_read_count = readsCount(files_unpaired_reads)
+
+    # Calculate effective length
+    eff_length = estimate_eff_length(flux_simulator["length"].values, count_dict)
+    flux_simulator["eff_length"] = eff_length
+
+    # Merge
+    flux_simulator = pd.merge(unpaired_read_count, flux_simulator, on='name', how='outer')
+    flux_simulator = flux_simulator.fillna(value=0)
+
+    # Calculate TPM, counts
+    flux_simulator['answer_count'] = flux_simulator['read_count'] - flux_simulator['count']
+    flux_simulator['read_per_nucleotide'] = flux_simulator['answer_count'] / flux_simulator['eff_length']
+    flux_simulator['answer_tpm'] = 10 ** 6 * flux_simulator['read_per_nucleotide'] / flux_simulator['read_per_nucleotide'].sum()
+
+    # output and save
+    flux_simulator = flux_simulator.loc[:, ('name', 'answer_tpm', 'answer_count')]
+    flux_simulator = flux_simulator.round({'answer_tpm': 3})
+    flux_simulator.to_csv(file_output, sep='\t', index=False)
+
+
 if __name__ == "__main__":
     data_folder = "data/yeast"
+    """
+    # test
     mRNAFilter(data_folder, refdir=f"{data_folder}/download", simdir=f"{data_folder}/simulation", shortest_length=500)
-    # splitInterleavedReads(f"{data_folder}/simulation/flux_simulator_yeast_low.fastq", f"{data_folder}/simlow")
-    # fasta_length_filter(f"{data_folder}/rnaspades/transcripts.fasta", "{data_folder}/simlow.rnaspades.fasta", 500)
+    splitInterleavedReads(f"{data_folder}/simulation/flux_simulator_yeast_low.fastq", f"{data_folder}/simlow")
+    fasta_length_filter(f"{data_folder}/rnaspades/transcripts.fasta", "{data_folder}/simlow.rnaspades.fasta", 500)
+    average_tpm({'kallisto': f"{data_folder}/explow.mRNA.kallisto.tsv",
+                 'rsem': f"{data_folder}/explow.mRNA.rsem.tsv",
+                 'salmon': f"{data_folder}/explow.mRNA.salmon.tsv"}, "tmp.tsv")
+    reference_tpm("data/yeast/simulation/flux_simulator_yeast_low.pro",
+                  "data/yeast/simulation/flux_simulator_yeast_low.lib",
+                  ["data/yeast/trimmed/simlow_r1.unpaired.fastq",
+                   "data/yeast/trimmed/simlow_r2.unpaired.fastq"],
+                  "tmp.tsv")
+    """
+
     sys.exit(0)
