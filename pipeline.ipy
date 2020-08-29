@@ -37,32 +37,32 @@ def download():
     experiment fastq file:  data/{species}/xx.fastq
     """
     for species in data['species']:
-        meta = data['species'][species]
         data_folder = f"{base_folder}/{species}/download"
-        exp_project = ["explow", "exphigh"]
         !mkdir -p {data_folder}
 
         # download sequences and annotation from Ensembl
-        !wget {meta['ref_genome']} -O {data_folder}/genome.fasta.gz
-        !wget {meta['ref_transcriptome']} -O {data_folder}/transcriptome.fasta.gz
-        !wget {meta['ref_annotation']} -O {data_folder}/annotation.gff.gz
-
-        # Download fastq from ncbi
-        !echo '/LIBS/GUID = "7509f4a9-59b3-4305-85a3-e5a140183031"' > /tmp/tmp.mkfg
-        for proj in exp_project:
-            for id in meta[f'{proj}_sraid']:
-                %dk -v /tmp/tmp.mkfg:/root/.ncbi/user-settings.mkfg:ro {data['images']['sratool']} \
-                        fastq-dump --defline-seq '@$sn[_$rn]/$ri' --split-files {id} -O {data_folder}
+        reference = data['species'][species]
+        !wget {reference['ref_genome']} -O {data_folder}/genome.fasta.gz
+        !wget {reference['ref_transcriptome']} -O {data_folder}/transcriptome.fasta.gz
+        !wget {reference['ref_annotation']} -O {data_folder}/annotation.gff.gz
 
         # unzip all
         !gzip -d {data_folder}/*.gz
 
-        # merge and rename
-        for proj in exp_project:
-            fastqs_r1 = ' '.join([os.path.join(data_folder, id + "_1.fastq") for id in meta[f'{proj}_sraid']])
-            fastqs_r2 = ' '.join([os.path.join(data_folder, id + "_2.fastq") for id in meta[f'{proj}_sraid']])
-            !cat {fastqs_r1} > {data_folder}/../{proj}_r1.fastq
-            !cat {fastqs_r2} > {data_folder}/../{proj}_r2.fastq
+        !echo '/LIBS/GUID = "7509f4a9-59b3-4305-85a3-e5a140183031"' > /tmp/tmp.mkfg
+        for ds in data['datasets']:
+            sraid = data['datasets'][ds][species].get('sraid', [])
+            # Download fastq from ncbi
+            for id in sraid:
+                %dk -v /tmp/tmp.mkfg:/root/.ncbi/user-settings.mkfg:ro {data['images']['sratool']} \
+                        fastq-dump --defline-seq '@$sn[_$rn]/$ri' --split-files {id} -O {data_folder}
+
+            # merge the fastq
+            if sraid:
+                fastqs_r1 = ' '.join([os.path.join(data_folder, id + "_1.fastq") for id in sraid])
+                fastqs_r2 = ' '.join([os.path.join(data_folder, id + "_2.fastq") for id in sraid])
+                !cat {fastqs_r1} > {data_folder}/../{proj}_r1.fastq
+                !cat {fastqs_r2} > {data_folder}/../{proj}_r2.fastq
 
 
 def prepareReference():
@@ -131,7 +131,9 @@ def simulation():
                 continue
 
             data_folder = f"{base_folder}/{species}/simulation"
-            file_simulation = data['species'][species][ds + '_file']
+            file_simulation = data['datasets'][ds][species]['simulation_file']
+            print(file_simulation)
+            sys.exit()
             !cp {file_simulation}* {data_folder}
             basename = os.path.basename(file_simulation)
             print("Simulate", basename)
@@ -141,7 +143,7 @@ def simulation():
                 flux-simulator --threads {thread} -p {data_folder}/{basename}.par -l -s
 
             # split reads
-            splitInterleavedReads(f"{data_folder}/{basename}.fastq", f"{data_folder}/../{proj}")
+            splitInterleavedReads(f"{data_folder}/{basename}.fastq", f"{data_folder}/../{ds}")
 
 
 def fastqc():
@@ -191,7 +193,7 @@ def trimmomatic():
                 {basename}_r1.fastq {basename}_r2.fastq \
                 {basename}_r1.trim.fastq {basename_trim}_r1.unpaired.fastq \
                 {basename}_r2.trim.fastq {basename_trim}_r2.unpaired.fastq \
-                SLIDINGWINDOW:4:20 MINLEN:30
+                data['trimmomatic']
 
 
 def assemble():
@@ -390,9 +392,14 @@ def answerSim():
             reference_tpm(file_pro, file_lib, file_unpaired, f"{data_folder}/{ds}.mRNA.answer.tsv")
 
 
-def blastSelf():
+def blastTranscript():
     """
-    Self blast assembled transcriptome
+    Run blast on transcriptome
+
+    Three different query are ran:
+        * Blast to itself
+        * Blast assembled_transcripts to reference
+        * Blast reference to assembled_transcripts
 
     Input
     -----
@@ -401,6 +408,7 @@ def blastSelf():
 
     Output:
     Blast data: data/{species}/blast
+    Blast self result: data/{species}/mRNA.blast.self.tsv
     Blast self result: data/{species}/{ds}.{method_assemble}.blast.self.tsv
     Blast mrna to contig result: data/{species}/{ds}.{method_assemble}.blast.mrna_to_contig.tsv
     Blast contig to mrna result: data/{species}/{ds}.{method_assemble}.blast.contig_to_mrna.tsv
@@ -413,10 +421,13 @@ def blastSelf():
         !mkdir -p {data_folder}/blast
         %dk {data['images']['blast']} \
             makeblastdb -in {mrna_seq} -dbtype nucl -out {mrna_blast}
+        %dk {data['images']['blast']} \
+            blastn -db {mrna_blast} -query {mrna_seq} -outfmt 6 -out {data_folder}/mRNA.blast.self.tsv \
+            -evalue {data['blast']['evalue']} -perc_identity {data['blast']['identity']}
 
         for ds in data['datasets']:
             for method_assemble in data['assemble']:
-                # mrna database
+                # assembled database
                 assembled_seq = f"{data_folder}/{ds}.{method_assemble}.fasta"
                 assembled_blast = f"{data_folder}/blast/{ds}.{method_assemble}"
                 blast_name = f"{data_folder}/{ds}.{method_assemble}.blast"
@@ -445,7 +456,8 @@ def checkAssembleQuality():
 
     Outputs
     -------
-    Transrate Output:
+    Transrate Output: data/{species}/transrate
+    Transrate tsv: data/{species}/xx.{method_assemble}.transrate.tsv
     """
     for species in data['species']:
         data_folder = f"{base_folder}/{species}"
@@ -459,8 +471,8 @@ def checkAssembleQuality():
                     transrate --assembly {ori_seq}.{method_assemble}.fasta --threads {thread} \
                     --output {transrate_folder}/{ds}.{method_assemble} \
                     --left {ori_seq}_r1.fastq --right {ori_seq}_r2.fastq
-                ! mv {transrate_folder}/{ds}.{method_assemble}/{ds}.{method_assemble}/contigs.csv \
-                     {data_folder}/{ds}.{method_assemble}.transrate.csv
+                !mv {transrate_folder}/{ds}.{method_assemble}/{ds}.{method_assemble}/contigs.csv \
+                    {data_folder}/{ds}.{method_assemble}.transrate.csv
 
 
 # main
@@ -481,7 +493,7 @@ if args.method in ["all", "answer"]:
     answerExp()
     answerSim()
 if args.method in ["all", "postassemble"]:
-    blastSelf()
+    blastTranscript()
     checkAssembleQuality()
 
 # ipython pipeline.ipy -- --method=quantify

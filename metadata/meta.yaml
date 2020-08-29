@@ -4,40 +4,52 @@ species:
         ref_transcriptome: ftp://ftp.ensembl.org/pub/release-90/fasta/saccharomyces_cerevisiae/cdna/Saccharomyces_cerevisiae.R64-1-1.cdna.all.fa.gz
         ref_annotation: ftp://ftp.ensembl.org/pub/release-90/gff3/saccharomyces_cerevisiae/Saccharomyces_cerevisiae.R64-1-1.90.gff3.gz
         # It will merge the ids in array into single fastq data
-        explow_sraid: [SRR453566]
-        exphigh_sraid: [SRR453566,SRR453567,SRR453568]
         mrna_min_length: 500
-
-        # no extention
-        simlow_file: metadata/flux_simulator_yeast_low
-        simhigh_file: metadata/flux_simulator_yeast_high
-
     dog:
         ref_genome: ftp://ftp.ensembl.org/pub/release-90/fasta/canis_familiaris/dna/Canis_familiaris.CanFam3.1.dna.toplevel.fa.gz
         ref_transcriptome: ftp://ftp.ensembl.org/pub/release-90/fasta/canis_familiaris/cdna/Canis_familiaris.CanFam3.1.cdna.all.fa.gz
         ref_annotation: ftp://ftp.ensembl.org/pub/release-90/gff3/canis_familiaris/Canis_familiaris.CanFam3.1.90.chr.gff3.gz
-        explow_sraid: [SRR882109]
-        exphigh_sraid: [SRR882105]
         mrna_min_length: 500
-        simlow_file: metadata/flux_simulator_dog_low
-        simhigh_file: metadata/flux_simulator_dog_high
 
     mouse:
         ref_genome: ftp://ftp.ensembl.org/pub/release-90/fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna.toplevel.fa.gz
         ref_transcriptome: ftp://ftp.ensembl.org/pub/release-90/fasta/mus_musculus/cdna/Mus_musculus.GRCm38.cdna.all.fa.gz
         ref_annotation: ftp://ftp.ensembl.org/pub/release-90/gff3/mus_musculus/Mus_musculus.GRCm38.90.chr.gff3.gz
-        explow_sraid: [SRR203276]
-        exphigh_sraid: [SRR203276]
         mrna_min_length: 500
-        simlow_file: metadata/flux_simulator_mouse_low
-        simhigh_file: metadata/flux_simulator_mouse_high
-
 
 datasets:
-  - simlow
-  - simhigh
-  - explow
-  - exphigh
+    simlow:
+        type: simulation
+        yeast:
+            simulation_file: metadata/flux_simulator_yeast_low
+        dog:
+            simulation_file: metadata/flux_simulator_dog_low
+        mouse:
+            simulation_file: metadata/flux_simulator_mouse_low
+    simhigh:
+        type: simulation
+        yeast:
+            simulation_file: metadata/flux_simulator_yeast_high
+        dog:
+            simulation_file: metadata/flux_simulator_dog_high
+        mouse:
+            simulation_file: metadata/flux_simulator_mouse_high
+    explow:
+        type: experiment
+        yeast:
+            sraid: [SRR453566]
+        dog:
+            sraid: [SRR882109]
+        mouse:
+            sraid: [SRR203276]
+    exphigh:
+        type: experiment
+        yeast:
+            sraid: [SRR453566,SRR453567,SRR453568]
+        dog:
+            sraid: [SRR882105]
+        mouse:
+            sraid: [SRR203276]
 
 assemble:
     trinity:
@@ -54,10 +66,13 @@ quant:
     salmon:
         kmer: 31
 
+# parameters
+trimmomatic: "SLIDINGWINDOW:4:20 MINLEN:30"
 blast:
     identity: 95
     evalue: 1e-5
 
+# Version of tools
 images:
     trinity:        "docker.io/trinityrnaseq/trinityrnaseq:2.11.0"
     rnaspades:      "docker.io/biocontainers/spades:v3.13.1_cv1"
