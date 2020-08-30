@@ -95,7 +95,7 @@ data/yeast/
 ```
 
 ### Run QuantEval Main Program
-In brief, TPM/counts will be calculated based on each components, compared to normal method that show tpm/counts for each transcript individually.
+In brief, TPM/counts will be calculated based on each components, instead of normal method that show tpm/counts for each transcript individually.
 
 Three files are needed before running QuantEval
 * Abundance files(Of course)
@@ -128,22 +128,30 @@ mv ./transrate/contigs.csv transrate.csv
 
 #### Main
 After all input filess are ready, we can run the main program.
+
+You can use example data in `./example` to test
+
 ```bash
 # Preprocess the abundance tsv to simplified table
 # add --merge can merge multiple tsv together
 # Only tsv of quantifier: kallisto, rsem, salmon are allowed
-python3 QuantEval.py pre_abundance
-    --abundance kallisto_abundance.tsv
-    --quantifier kallisto
-    --merge
+python3 QuantEval.py pre_abundance \
+    --abundance example/kallisto_abundance.tsv \
+    --quantifier kallisto \
     --output    abundance.tsv
 
+python3 QuantEval.py pre_abundance \
+    --abundance example/rsem_abundance.tsv \
+    --quantifier rsem \
+    --merge \
+    --output    example/abundance.tsv
+
 # main
-python3 QuantEval.py contig
-    --abundance abundance.tsv
-    --transrate transrate.csv
-    --blast     contig.self.tsv
-    --output    quanteval.contig.tsv
+python3 QuantEval.py contig \
+    --abundance example/abundance.tsv \
+    --transrate example/transrate.csv \
+    --blast     example/contig.self.tsv \
+    --output    example/quanteval.contig.tsv
 ```
 
 #### QuantEval Output format
