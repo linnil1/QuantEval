@@ -1,140 +1,153 @@
- # QuantEval
- ## About
- QuantEval was released for two purposes: 1. a user can use the scripts in QuantEval to reproduce all the analyses in the following study (Hsieh et al.); 2. a user can follow the example in QuantEval to conduct the same analyses on his own study. For the first purpose, there are three modes in the QuantEval main program. (1) <b>Reference Mode</b>, (2) <b>Contig Mode</b> and (3) <b>Match Mode</b>. The first two modes read the quantification results and build a ambiguity cluster based on connected components for the reference transcripts and contig sequences. The match mode builds relations between contigs and reference transcripts. For the second purpose, the users are encouraged to follow the provided example to conduct new analyses on his own data.
- ## Reference
- > Ping-Han Hsieh, Yen-Jen Oyang and Chien-Yu Chen. Effect of de novo transcriptome assembly on transcript quantification. Scientific Reports volume 9, Article number: 8304 (2019).
- ## Requirement
- - QuantEval main program:
-    - Python3 (3.5.2)
-    - Python packages: pandas (0.20.3), numpy (1.12.1)
- - Generate figures and table:
-    - R (3.3.0)
-    - R pacakges: gridExtra, grid, stats, tidyverse, plyr, ggplot2, reshape2
- - Utilities:
-    - Bowtie2 (2.3.0), BLASTn (2.5.0), Flux Simulator (1.2.1), RSEM (1.2.31), Kallisto (0.43.0), rnaSPAdes (3.11.1), Salmon (0.8.2), Trans-ABySS (1.5.5), TransRate (1.0.3), Trinity (2.4.0)
+# QuantEval
+## About
+I rewrite the [original Code](https://github.com/dn070017/QuantEval) to make it cleaner.
 
- ## Manual
- - Run QuantEval individually:
- ```shell
- python3 ./scripts/QuantEval.py --reference --contig --match --input input.json
- ```
- The first three parameters (<b>--reference, --contig, --match</b>) indicate which mode to run and the <b>input.json</b> file specifies the input parameters for the QuantEval main program. The three modes can be run independantly, but one has to run both reference mode and contig mode <b>before</b> running the match mode. It is recommended to run three modes in sequential. Because the main program of QuantEval <b>does not</b> include a wrapper for quantification/sequence alignment/contig evaluation, which are essesntial steps for QuantEval main program, one might need to run quantification algorithms (i.e. RSEM/Kallisto/Salmon), sequence alignment (BLASTn) and contig evaluation (Transrate) by themselves in order to get similar analysis results in the reference research. 
- ___
+Two main features are implemented in this repo:
 
- Below, we use an example dataset to explain how to use QuantEval. This example contains the following files:
- - ref.fasta: the reference transcripts (In real applications, you will not have this file for the speices without reference transcripts)
- - contig.fasta: the contigs assembled by short reads, e.g. read_1.fastq and read_2.fastq
- - read_1.fastq read_2.fastq
+1. Run the pipeline of quantification on de-novo transcriptome assembly.
+2. Get the quantification results by building a ambiguity cluster based on connected components.
 
- Before running QuantEval,
- - Run pairwise BLASTn for reference/contig mode:
- ```shell
- # reference mode
- blastn -db ref.fasta -query ref.fasta -outfmt 6 -evalue 1e-5 -perc_identity 95 -out ./blastn/ref.self.tsv 
- 
- # contig mode
- blastn -db contig.fasta -query contig.fasta -outfmt 6 -evalue 1e-5 -perc_identity 95 -out ./blastn/contig.self.tsv
- ```
- - Run BLASTn for the mapping of reference and contig sequence (match mode)
- ```shell
- blastn -db ref.fasta -query contig.fasta -outfmt 6 -out ./blastn/contig_to_ref.tsv 
- ```
- - Run quantification for reference/contig mode with default parameters:
- ```shell
- # RSEM
- rsem-prepare-reference --bowtie2 ref.fasta ./rsem/rsem.index
- rsem-calculate-expression --paired-end --strandedness none --bowtie2 --time ref_read/read_1.fastq ref_read/read_2.fastq ./rsem/rsem.index ./rsem/rsem 
+Both methods are explained in the following study.
+> Ping-Han Hsieh, Yen-Jen Oyang and Chien-Yu Chen. Effect of de novo transcriptome assembly on transcript quantification. Scientific Reports volume 9, Article number: 8304 (2019).
 
- # Kallisto
- kallisto index -i ./kallisto/kallisto.index -k 31 ref.fasta
- kallisto quant -i ./kallisto/kallisto.index -o ./kallisto ref_read/read_1.fastq ref_read/read_2.fastq
+## Requirement
+I test successfully with below requirments
 
- # Salmon
- salmon index -i ./salmon/salmon.index -t ref.fasta --type quasi -k 31
- salmon quant -i ./salmon/salmon.index -l A -1 ref_read/read_1.fastq -2 ref_read/read_2.fastq -o ./salmon 
- ```
- - Run TransRate for reference/contig mode: 
- ```
- # reference mode
- transrate --assembly ref.fasta --output ./transrate/ref --left ref_read/read_1.fastq --right ref_read/read_2.fastq
+* Python:
+   * Python3.8.5
+   * Packages: pandas(1.1.0), numpy(1.19.1), biopython(1.77), scipy(1.52), PyYAML (5.3.1), ipython(7.17.0)
+   * Install it with `pip3 install -r requirments.txt`
+* Pipeline tools:
+    * All tools are ran in docker(Podman 1.6.4)
+    * wget
+* Generate figures and table:(Unreviewed by linnil1)
+   * R (3.3.0)
+   * R pacakges: gridExtra, grid, stats, tidyverse, plyr, ggplot2, reshape2
 
- # contig mode
- transrate --assembly contig.fasta --output ./transrate/ref --left contig_read/read_1.fastq --right contig_read/read_2.fastq
- ```
- - Example of input.json:
- ```json
-{
-    "ref_fasta": "ref.fasta",
-    "ref_blastn": "./blastn/ref.self.tsv",
-    "ref_gtf": "ref.gtf",
-    "ref_xprs_file": ["./answer/answer_xprs.tsv",
-                      "./kallisto/ref/abundance.tsv",
-                      "./rsem/ref/rsem.isoforms.results",
-                      "./salmon/ref/quant.sf"],
-    "ref_xprs_label": ["answer", "kallisto", "rsem", "salmon"],
-    "ref_xprs_header": [true, true, true, true],
-    "ref_xprs_name_col": [1, 1, 1, 1], 
-    "ref_xprs_tpm_col": [2, 5, 6, 4], 
-    "ref_xprs_count_col": [3, 4, 5, 5],
-    "ref_transrate": "./transrate/ref/contigs.csv",
-    "contig_fasta": "contig.fasta",
-    "contig_blastn": "./blastn/contig.self.tsv",
-    "contig_xprs_file": ["./kallisto/contig/abundance.tsv",
-                         "./rsem/contig/rsem.isoforms.results",
-                         "./salmon/contig/quant.sf"],
-    "contig_xprs_label": ["kallisto", "rsem", "salmon"],
-    "contig_xprs_header": [true, true, true],
-    "contig_xprs_name_col": [1, 1, 1], 
-    "contig_xprs_tpm_col": [5, 6, 4], 
-    "contig_xprs_count_col": [4, 5, 5],
-    "contig_transrate": "./transrate/contig/contigs.csv",
-    "match_blastn": "./blastn/contig_to_ref.tsv",
-    "output_dir": "./QuantEval/"
-}
+## Usage
+### Run pipelines
+**It takes a long time and large space to run.**
 ```
-___
- 
-- Run example:
+ipython pipeline.ipy -- --method=all
 ```
-cd example
-python3 ../scripts/QuantEval.py --reference --contig --match --input ./example.json
-```
-___
 
-One can also import the functions in utilities.py to built their own analysis pipeline.
-- Construct connected component for reference only:
-```python
-from utilities import construct_sequence, filter_blastn, intersect_match, construct_grap
-import copy
+All the configuration (include tool version, parameters and data source) are written in [`metadata/meta.yml`](https://github.com/linnil1/QuantEval/blob/master/metadata/meta.yaml).
 
-input_file = dict()
-input_file["contig_ref_file"] = ["./answer/answer_xprs.tsv",
-                                 "./kallisto/abundance.tsv",
-                                 "./rsem/rsem.isoforms.results",
-                                 "./salmon/quant.sf"]
-input_file["ref_xprs_label"]: ["answer", "kallisto", "rsem", "salmon"],
-input_file["ref_xprs_header"]: [true, true, true, true],
-input_file["ref_xprs_name_col"]: [1, 1, 1, 1], 
-input_file["ref_xprs_tpm_col"]: [2, 5, 6, 4], 
-input_file["ref_xprs_count_col"]: [3, 4, 5, 5],   
-ref_seq_dict = construct_sequence('ref.fasta')
-ref_self_blastn = filter_blastn('./blastn/ref.self.tsv')
-read_expression(input_file, ref_seq_dict, 'ref')
-ref_self_match_dict = intersect_match(ref_self_blastn, ref_seq_dict, copy.deepcopy(ref_seq_dict))
-ref_uf, ref_component_dict = construct_graph(ref_seq_dict, ref_self_match_dict)
+Feel free to modify it.
 
-print(ref_uf.component_label)
-print(ref_uf.parent)
+The result of one of species(yeast) and one of dataset(lower depth simulation)
+should look like this:
+
 ```
-___
- 
-- Run all the analysis in the study (<b>time consuming</b>):
-```shell
-./pipelines/run_analysis.sh
+data/yeast/
+├── chromosome.fasta
+├── fastqc
+│   ├── simlow_r1_fastqc.html
+│   ├── simlow_r1_fastqc.zip
+│   ├── simlow_r2_fastqc.html
+│   └── simlow_r2_fastqc.zip
+├── mRNA.blast.self.tsv
+├── mRNA.fasta
+├── mRNA.gtf
+├── simlow.mRNA.answer.tsv
+├── simlow.mRNA.fasta -> mRNA.fasta
+├── simlow.mRNA.blast.self.tsv-> mRNA.blast.self.tsv
+├── simlow.mRNA.kallisto.tsv
+├── simlow.mRNA.rsem.tsv
+├── simlow.mRNA.salmon.tsv
+├── simlow.mRNA.transrate.csv
+├── simlow_r1.fastq
+├── simlow_r1.trim.fastq
+├── simlow_r2.fastq
+├── simlow_r2.trim.fastq
+├── simlow.rnaspades.blast.contig_to_mrna.tsv
+├── simlow.rnaspades.blast.mrna_to_contig.tsv
+├── simlow.rnaspades.blast.self.tsv
+├── simlow.rnaspades.fasta
+├── simlow.rnaspades.kallisto.tsv
+├── simlow.rnaspades.rsem.tsv
+├── simlow.rnaspades.salmon.tsv
+├── simlow.rnaspades.transrate.csv
+├── simlow.transabyss.blast.contig_to_mrna.tsv
+├── simlow.transabyss.blast.mrna_to_contig.tsv
+├── simlow.transabyss.blast.self.tsv
+├── simlow.transabyss.fasta
+├── simlow.transabyss.kallisto.tsv
+├── simlow.transabyss.rsem.tsv
+├── simlow.transabyss.salmon.tsv
+├── simlow.transabyss.transrate.csv
+├── simlow.trinity.blast.contig_to_mrna.tsv
+├── simlow.trinity.blast.mrna_to_contig.tsv
+├── simlow.trinity.blast.self.tsv
+├── simlow.trinity.fasta
+├── simlow.trinity.kallisto.tsv
+├── simlow.trinity.rsem.tsv
+├── simlow.trinity.salmon.tsv
+├── simlow.trinity.transrate.csv
+├── simulation
+│   ├── flux_simulator_clean_sorted.gtf
+│   ├── flux_simulator.gtf
+│   ├── flux_simulator_yeast_low.lib
+│   └── flux_simulator_yeast_low.pro
+└── trimmed
+    ├── simlow_r1.unpaired.fastq
+    └── simlow_r2.unpaired.fastq
 ```
-___
- 
-- Output format
+
+### Run QuantEval Main Program
+In brief, TPM/counts will be calculated based on each components, compared to normal method that show tpm/counts for each transcript individually.
+
+Three files are needed before running QuantEval
+* Abundance files(Of course)
+* Self-Blast result(In tsv, aka blast format 6)
+* Transrate result
+
+#### Abundance files
+Run quantification and get the abundance file(e.g. kallisto)
+```bash
+# contig.fasta is the file you assembled by de-novo tools
+# read_r1.fastq and read_r2.fastq is the original read files
+# Abundance file: kallisto_abundance.tsv
+kallisto index -i ./kallisto/kallisto.index -k 31 contig.fasta
+kallisto quant -i ./kallisto/kallisto.index -o ./kallisto read_r1.fastq read_r2.fastq
+mv ./kallisto/abundance.tsv kallisto_abundance.tsv
+```
+
+#### Self-Blast
+Run pairwise BLASTn
+```bash
+blastn -db contig.fasta -query contig.fasta -outfmt 6 -evalue 1e-5 -perc_identity 95 -out ./contig.self.tsv
+```
+
+#### Transrate
+Run TransRate to get contig information
+```bash
+transrate --assembly contig.fasta --output ./transrate/ --left read_r1.fastq --right read_r2.fastq
+mv ./transrate/contigs.csv transrate.csv
+```
+
+#### Main
+After all input filess are ready, we can run the main program.
+```bash
+# Preprocess the abundance tsv to simplified table
+# add --merge can merge multiple tsv together
+# Only tsv of quantifier: kallisto, rsem, salmon are allowed
+python3 QuantEval.py pre_abundance
+    --abundance kallisto_abundance.tsv
+    --quantifier kallisto
+    --merge
+    --output    abundance.tsv
+
+# main
+python3 QuantEval.py contig
+    --abundance abundance.tsv
+    --transrate transrate.csv
+    --blast     contig.self.tsv
+    --output    quanteval.contig.tsv
+```
+
+#### QuantEval Output format
+`quanteval.contig.tsv`
 
 | column | description |
 |--------|-------------|
@@ -159,5 +172,5 @@ ___
 | ref_gene_avg_xprs_***tpm/count***\_***quantifier*** | average ***TPM/count*** of ref in the same gene |
 | ref_gene_tot_xprs_***tpm/count***\_***quantifier*** | total ***TPM/count*** of ref in the same gene |
 | length_difference | the difference of length between contig and reference |
-| xprs_***tpm/count***\_error_***quantifier*** | quantificaion error for the estimated abundance of contig | 
+| xprs_***tpm/count***\_error_***quantifier*** | quantificaion error for the estimated abundance of contig |
 > Note that this is the superset of the output fields (the match mode). The content of output will be different depends on reference/contig/match mode (e.g. one can only find the columns start with ***contig*** from contig mode), but one can find all the description on the table above.

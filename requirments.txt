@@ -1,0 +1,6 @@
+ipython
+pyyaml
+numpy
+pandas
+biopython
+scipy
