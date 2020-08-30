@@ -7,23 +7,24 @@ import os
 import yaml
 from pprint import pprint
 import argparse
+from pipelines.utils import setupLogger
 
 # Commmand line parameters
 parser = argparse.ArgumentParser(description="Pipeline of quantification of de-novo assembly")
 parser.add_argument("--method",       type=str, default="all",  help="What step you want to run. Default: all.")
 parser.add_argument("-t", "--thread", type=int, default=32,     help="Threads")
 parser.add_argument("-m", "--memory", type=int, default=300,    help="Memory")
-parser.add_argument("--meta",         type=str, default="metadata/meta.yaml", help="The path of metadata")
-parser.add_argument("--base",         type=str, default="data", help="The path to store your data")
+parser.add_argument("--metadata",     type=str, default="metadata/meta.yaml", help="The path of metadata")
+parser.add_argument("--base",         type=str, default="data1", help="The path to store your data")
 args = parser.parse_args()
 
 # init
-data = yaml.load(open(args.meta))
+data = yaml.load(open(args.metadata))
 thread = args.thread
 memory = args.memory
 base_folder = args.base
 %alias dk docker run -it --rm --security-opt label=disable -v $PWD:/app -w /app %s
-
+logger = setupLogger()
 
 def download():
     """
@@ -37,32 +38,37 @@ def download():
     experiment fastq file:  data/{species}/xx.fastq
     """
     for species in data['species']:
-        data_folder = f"{base_folder}/{species}/download"
-        !mkdir -p {data_folder}
+        data_folder = f"{base_folder}/{species}"
+        download_folder = f"{data_folder}/download"
+        !mkdir -p {download_folder}
 
         # download sequences and annotation from Ensembl
+        logger.info(f"Download {species} reference")
         reference = data['species'][species]
-        !wget {reference['ref_genome']} -O {data_folder}/genome.fasta.gz
-        !wget {reference['ref_transcriptome']} -O {data_folder}/transcriptome.fasta.gz
-        !wget {reference['ref_annotation']} -O {data_folder}/annotation.gff.gz
+        !wget {reference['ref_genome']} -O {download_folder}/genome.fasta.gz
+        !wget {reference['ref_transcriptome']} -O {download_folder}/transcriptome.fasta.gz
+        !wget {reference['ref_annotation']} -O {download_folder}/annotation.gff.gz
 
         # unzip all
-        !gzip -d {data_folder}/*.gz
+        !gzip -d {download_folder}/*.gz
 
+        # download data for simulation dataset
         !echo '/LIBS/GUID = "7509f4a9-59b3-4305-85a3-e5a140183031"' > /tmp/tmp.mkfg
         for ds in data['datasets']:
             sraid = data['datasets'][ds][species].get('sraid', [])
             # Download fastq from ncbi
             for id in sraid:
+                logger.info(f"Download sra {id} from ncbi")
                 %dk -v /tmp/tmp.mkfg:/root/.ncbi/user-settings.mkfg:ro {data['images']['sratool']} \
-                        fastq-dump --defline-seq '@$sn[_$rn]/$ri' --split-files {id} -O {data_folder}
+                    fastq-dump --defline-seq '@$sn[_$rn]/$ri' --split-files {id} -O {download_folder}
 
             # merge the fastq
             if sraid:
-                fastqs_r1 = ' '.join([os.path.join(data_folder, id + "_1.fastq") for id in sraid])
-                fastqs_r2 = ' '.join([os.path.join(data_folder, id + "_2.fastq") for id in sraid])
-                !cat {fastqs_r1} > {data_folder}/../{proj}_r1.fastq
-                !cat {fastqs_r2} > {data_folder}/../{proj}_r2.fastq
+                logger.info(f"Generate {species} {ds} reads data from sra")
+                fastqs_r1 = ' '.join([os.path.join(download_folder, id + "_1.fastq") for id in sraid])
+                fastqs_r2 = ' '.join([os.path.join(download_folder, id + "_2.fastq") for id in sraid])
+                !cat {fastqs_r1} > {data_folder}/{ds}_r1.fastq
+                !cat {fastqs_r2} > {data_folder}/{ds}_r2.fastq
 
 
 def prepareReference():
@@ -94,6 +100,7 @@ def prepareReference():
 
     from pipelines.utils import mRNAFilter
     for species in data['species']:
+        logger.info(f"Prepare {species} mRNA and simulation data")
         data_folder = f"{base_folder}/{species}"
         mRNAFilter(data_folder,
                    refdir=f"{data_folder}/download",
@@ -125,25 +132,26 @@ def simulation():
     Reads data:         xx_r1.fastq, xx_r2.fastq
     """
     from pipelines.utils import splitInterleavedReads
+    # for each species for each simulation datasets
     for species in data['species']:
+        data_folder = f"{base_folder}/{species}"
         for ds in data['datasets']:
-            if not ds.startswith("sim"):
+            if data['datasets'][ds]['type'] != "simulation":
                 continue
 
-            data_folder = f"{base_folder}/{species}/simulation"
+            # copy the simulation profile
+            simulation_folder = f"{base_folder}/{species}/simulation"
             file_simulation = data['datasets'][ds][species]['simulation_file']
-            print(file_simulation)
-            sys.exit()
-            !cp {file_simulation}* {data_folder}
-            basename = os.path.basename(file_simulation)
-            print("Simulate", basename)
+            !cp {file_simulation}* {simulation_folder}
+            name = os.path.basename(file_simulation)
 
             # simulation
+            logger.info(f"Run simulation for {species} {ds}")
             %dk {data['images']['fluxsimulator']} \
-                flux-simulator --threads {thread} -p {data_folder}/{basename}.par -l -s
+                flux-simulator --threads {thread} -p {simulation_folder}/{name}.par -l -s
 
-            # split reads
-            splitInterleavedReads(f"{data_folder}/{basename}.fastq", f"{data_folder}/../{ds}")
+            # split reas
+            splitInterleavedReads(f"{simulation_folder}/{name}.fastq", f"{data_folder}/{ds}")
 
 
 def fastqc():
@@ -159,9 +167,9 @@ def fastqc():
     FastQC output: data/{species}/fastqc/
     """
     for species in data['species']:
+        logger.info(f"Fastqc {species}")
         data_folder = f"{base_folder}/{species}"
         !mkdir -p {data_folder}/fastqc
-
         %dk {data['images']['fastqc']} \
             fastqc -t {thread} -f fastq -o {data_folder}/fastqc {data_folder}/*.fastq
 
@@ -180,20 +188,20 @@ def trimmomatic():
     Trimmed reads data: data/{species}/xx.trim.fastq
     Trimmomatic output: data/{species}/trimmed/
     """
+    # for each species for each datasets
     for species in data['species']:
         data_folder = f"{base_folder}/{species}"
-        !mkdir -p {data_folder}/trimmed
+        trim_folder = f"{data_folder}/trimmed"
+        !mkdir -p {trim_folder}
         for ds in data['datasets']:
-            basename = f"{data_folder}/{ds}"
-            basename_trim = f"{data_folder}/trimmed/{ds}"
-            print("Trim", basename)
-
+            # Run trimmomatic
+            logger.info(f"Trimmomatic {species} {ds}")
             %dk {data['images']['trimmomatic']} \
-                trimmomatic PE -threads {thread} -phred33 -trimlog {basename_trim}.log \
-                {basename}_r1.fastq {basename}_r2.fastq \
-                {basename}_r1.trim.fastq {basename_trim}_r1.unpaired.fastq \
-                {basename}_r2.trim.fastq {basename_trim}_r2.unpaired.fastq \
-                data['trimmomatic']
+                trimmomatic PE -threads {thread} -phred33 -trimlog {trim_folder}/{ds}.log \
+                {data_folder}/{ds}_r1.fastq      {data_folder}/{ds}_r2.fastq \
+                {data_folder}/{ds}_r1.trim.fastq {trim_folder}/{ds}_r1.unpaired.fastq \
+                {data_folder}/{ds}_r2.trim.fastq {trim_folder}/{ds}_r2.unpaired.fastq \
+                {data['trimmomatic']}
 
 
 def assemble():
@@ -212,15 +220,11 @@ def assemble():
     """
     from pipelines.utils import fasta_length_filter
 
+    # for each species for each datasets for each assemble method
     for species in data['species']:
         data_folder = f"{base_folder}/{species}"
         for ds in data['datasets']:
-            # create soft link to mRNA sequences
-            basename = f"{data_folder}/{ds}"
-            !ln -s mRNA.fasta {basename}.mRNA.fasta
-
-            # Run all assemble methods
-            for method in data['assemble']:
+            for method_assemble in data['assemble']:
                 # TODO check: Using different strand when proceed mouse data with experiment fastq
                 if ds.startswith("exp") and species == "mouse":
                     strand_trinity = "--SS_lib_type RF"
@@ -231,38 +235,46 @@ def assemble():
                     strand_transabyss = ""
                     strand_rnaspades = ""
 
-                image = data['images'][method]
-                min_len = data['assemble'][method]['minlen']
-                base_assemble_folder = f"{data_folder}/{method}"
-                !mkdir -p {base_assemble_folder}
+                image = data['images'][method_assemble]
+                min_len = data['assemble'][method_assemble]['minlen']
+                ori_seq = lambda o: f"{data_folder}/{ds}_r{{}}.trim.fastq".format(o)
+                assemble_folder = f"{data_folder}/{method_assemble}"
+                !mkdir -p {assemble_folder}
 
                 # trinity
-                if method == "trinity":
+                logger.info(f"Assemble {ori_seq('*')} by {method_assemble}")
+                if method_assemble == "trinity":
                     %dk {image} \
-                        Trinity --max_memory {memory}G --CPU {thread} --seqType fq {strand_trinity} --min_contig_length {min_len} \
-                        --left {basename}_r1.trim.fastq --right {basename}_r2.trim.fastq --output {base_assemble_folder}
-                    !cp {base_assemble_folder}/Trinity.fasta {basename}.trinity.fasta
-                    !rm -rf {base_assemble_folder}
+                        Trinity --max_memory {memory}G --CPU {thread} --min_contig_length {min_len} \
+                        --seqType fq {strand_trinity} --output {assemble_folder} \
+                        --left {ori_seq(1)} --right {ori_seq(2)}
+                    !cp {assemble_folder}/Trinity.fasta {data_folder}/{ds}.trinity.fasta
+                    !rm -rf {assemble_folder}
 
                 # rnaspades
-                elif method == "rnaspades":
+                elif method_assemble == "rnaspades":
                     %dk -u root {image} \
                         rnaspades.py -t {thread} -m {memory} {strand_rnaspades} \
-                        -1 {basename}_r1.trim.fastq -2 {basename}_r2.trim.fastq -o {base_assemble_folder}
-                    fasta_length_filter(f"{base_assemble_folder}/transcripts.fasta", f"{basename}.rnaspades.fasta", min_len)
-                    !rm -rf {base_assemble_folder}
+                        -1 {ori_seq(1)} -2 {ori_seq(2)} -o {assemble_folder}
+                    fasta_length_filter(f"{assemble_folder}/transcripts.fasta",
+                                        f"{data_folder}/{ds}.rnaspades.fasta", min_len)
+                    !rm -rf {assemble_folder}
 
                 # transabyss
-                elif method == "transabyss":
-                    %dk {image} bash -c "ln -s /usr/local/bin/ /usr/local/lib/python3.8/site-packages/bin && \
+                elif method_assemble == "transabyss":
+                    %dk {image} bash -c " \
+                            ln -s /usr/local/bin/ /usr/local/lib/python3.8/site-packages/bin && \
                             transabyss --threads {thread} --length {min_len} {strand_transabyss} \
-                            --pe {basename}_r1.trim.fastq {basename}_r2.trim.fastq --outdir {base_assemble_folder}/log"
+                            --pe {ori_seq(1)} {ori_seq(2)} --outdir {assemble_folder}"
 
-                    !cp {base_assemble_folder}/transabyss-final.fa {basename}.transabyss.fasta
-                    !rm -rf {base_assemble_folder}
+                    !cp {assemble_folder}/transabyss-final.fa {data_folder}/{ds}.transabyss.fasta
+                    !rm -rf {assemble_folder}
 
                 else:
-                    print("error")
+                    raise ValueError(f"Unknown assemble tool {method_assemble}")
+
+            # create soft link to mRNA sequences
+            !ln -s mRNA.fasta {data_folder}/{ds}.mRNA.fasta
 
 
 def quantification(reference=True):
@@ -283,57 +295,58 @@ def quantification(reference=True):
     -------
     Abundance tsv: data/{species}/xx.{method_assemble}.{method_quantify}.tsv
     """
+    # for each species for each datasets for each assemble method for each quantification
     for species in data['species']:
         data_folder = f"{base_folder}/{species}"
         for ds in data['datasets']:
-            ori_seq = f"{data_folder}/{ds}"
-            # TODO check: Using different strand when proceed mouse data with experiment fastq
-            if ds.startswith("exp") and species == "mouse":
-                strand_kallisto = "--rf-stranded"
-                strand_rsem = "reverse"
-                #SS_SALMON="-l ISR"
-            else:
-                strand_kallisto = ""
-                strand_rsem = "none"
-
             for method_assemble in [*data['assemble'], "mRNA"]:
                 if method_assemble == "mRNA" and not reference:
                     continue
+                for method_quantify in data['quant']:
+                    # TODO check: Using different strand when proceed mouse data with experiment fastq
+                    if ds.startswith("exp") and species == "mouse":
+                        strand_kallisto = "--rf-stranded"
+                        strand_rsem = "reverse"
+                        #SS_SALMON="-l ISR"
+                    else:
+                        strand_kallisto = ""
+                        strand_rsem = "none"
 
-                whole_seq = f"{data_folder}/{ds}.{method_assemble}.fasta"
-                for method_quant in data['quant']:
-                    image = data['images'][method_quant]
-                    data_quant_folder = f"{base_folder}/{species}/{method_quant}"
-                    name = f"{ds}.{method_assemble}.{method_quant}"
-                    !mkdir -p {data_quant_folder}
+                    image = data['images'][method_quantify]
+                    ori_seq = lambda o: f"{data_folder}/{ds}_r{{}}.fastq".format(o)
+                    whole_seq = f"{data_folder}/{ds}.{method_assemble}.fasta"
+                    name = f"{ds}.{method_assemble}.{method_quantify}"
+                    quantify_folder = f"{data_folder}/{method_quantify}"
+                    !mkdir -p {quantify_folder}
+                    logger.info(f"Quantify {species} {name} by {method_quantify}")
 
                     # kallisto
-                    if method_quant == "kallisto":
+                    if method_quantify == "kallisto":
                         %dk {image} \
-                            kallisto index -i {data_quant_folder}/{name}.index -k {data['quant'][method_quant]['kmer']} {whole_seq}
+                            kallisto index -i {quantify_folder}/{name}.index -k {data['quant'][method_quantify]['kmer']} {whole_seq}
                         %dk {image} \
-                            kallisto quant -i {data_quant_folder}/{name}.index -t {thread} {strand_kallisto} \
-                                 -o {data_quant_folder} {ori_seq}_r1.fastq {ori_seq}_r2.fastq
-                        !mv {data_quant_folder}/abundance.tsv {data_folder}/{name}.tsv
+                            kallisto quant -i {quantify_folder}/{name}.index -t {thread} {strand_kallisto} \
+                                 -o {quantify_folder} {ori_seq(1)} {ori_seq(2)}
+                        !mv {quantify_folder}/abundance.tsv {data_folder}/{name}.tsv
 
                     # rsem
-                    elif method_quant == "rsem":
+                    elif method_quantify == "rsem":
                         %dk {image} \
-                            rsem-prepare-reference -p {thread} --bowtie2 {whole_seq} {data_quant_folder}/{name}.index
+                            rsem-prepare-reference -p {thread} --bowtie2 {whole_seq} {quantify_folder}/{name}.index
                         %dk {image} \
                             rsem-calculate-expression --strandedness {strand_rsem} -p {thread} --bowtie2 --time --paired-end  \
-                                {ori_seq}_r1.fastq {ori_seq}_r2.fastq {data_quant_folder}/{name}.index {data_quant_folder}/{name}
-                        !mv {data_quant_folder}/{name}.isoforms.results {data_folder}/{name}.tsv
+                                {ori_seq(1)} {ori_seq(2)} {quantify_folder}/{name}.index {quantify_folder}/{name}
+                        !mv {quantify_folder}/{name}.isoforms.results {data_folder}/{name}.tsv
 
                     # salmon
-                    elif method_quant == "salmon":
+                    elif method_quantify == "salmon":
                         %dk {image} \
-                            salmon index -i {data_quant_folder}/{name}.index -t {whole_seq} --type quasi \
-                                -k {data['quant'][method_quant]['kmer']}
+                            salmon index -i {quantify_folder}/{name}.index -t {whole_seq} --type quasi \
+                                -k {data['quant'][method_quantify]['kmer']}
                         %dk {image} \
-                            salmon quant -i {data_quant_folder}/{name}.index -p {thread} -l A \
-                                -1 {ori_seq}_r1.fastq -2 {ori_seq}_r2.fastq -o {data_quant_folder}
-                        !mv {data_quant_folder}/quant.sf {data_folder}/{name}.tsv
+                            salmon quant -i {quantify_folder}/{name}.index -p {thread} -l A \
+                                -1 {ori_seq(1)} -2 {ori_seq(2)} -o {quantify_folder}
+                        !mv {quantify_folder}/quant.sf {data_folder}/{name}.tsv
 
 
 def answerExp():
@@ -345,20 +358,23 @@ def answerExp():
 
     Inputs
     ------
-    Quantification tsv files: data/{species}/xx.mRNA.{method_quant}.tsv
+    Quantification tsv files: data/{species}/xx.mRNA.{method_quantify}.tsv
 
     Outputs
     -------
     Answer tsv files: data/{species}/xx.mRNA.answer.tsv
     """
     from pipelines.utils import average_tpm
+    # for each experiment
     for species in data['species']:
         data_folder = f"{base_folder}/{species}"
         for ds in data['datasets']:
-            if not ds.startswith("exp"):
+            if data['datasets'][ds]['type'] != "experiment":
                 continue
-            files = {method_quant: f"{data_folder}/{ds}.mRNA.{method_quant}.tsv"
-                        for method_quant in data['quant']}
+            # average the abundance data
+            logger.info(f"Create answer for {species} {ds} by {list(data['quant'].keys())}")
+            files = {method_quantify: f"{data_folder}/{ds}.mRNA.{method_quantify}.tsv"
+                        for method_quantify in data['quant']}
             average_tpm(files, f"{data_folder}/{ds}.mRNA.answer.tsv")
 
 
@@ -366,9 +382,11 @@ def answerSim():
     """
     Generate answer to simulation fastq.
 
+    The answer of count/TPM = the count of simulation - count of trimmed
+
     Inputs
     ------
-    Quantification tsv files: data/{species}/xx.mRNA.{method_quant}.tsv
+    Quantification tsv files: data/{species}/xx.mRNA.{method_quantify}.tsv
     Simulation data: data/{species}/simulation/xx.pro
     Simulation data: data/{species}/simulation/xx.lib
     unparied reads: data/{species}/trimmed/simlow_r1.unpaired.fastq
@@ -379,17 +397,20 @@ def answerSim():
     """
     from pipelines.utils import reference_tpm
 
+    # for each simulation
     for species in data['species']:
         data_folder = f"{base_folder}/{species}"
         for ds in data['datasets']:
-            if not ds.startswith("sim"):
+            if data['datasets'][ds]['type'] != "simulation":
                 continue
-            name_simulation = os.path.basename(data['species'][species][ds + '_file'])
-            file_pro = f"{data_folder}/simulation/{name_simulation}.pro"
-            file_lib = f"{data_folder}/simulation/{name_simulation}.lib"
-            file_unpaired = [f"{data_folder}/trimmed/{ds}_r1.unpaired.fastq",
-                             f"{data_folder}/trimmed/{ds}_r2.unpaired.fastq"]
-            reference_tpm(file_pro, file_lib, file_unpaired, f"{data_folder}/{ds}.mRNA.answer.tsv")
+            # calculate abundance
+            name = os.path.basename(data['datasets'][ds][species]['simulation_file'])
+            logger.info(f"Create answer for {species} {name} by {name}")
+            reference_tpm(f"{data_folder}/simulation/{name}.pro",
+                          f"{data_folder}/simulation/{name}.lib",
+                          [f"{data_folder}/trimmed/{ds}_r1.unpaired.fastq",
+                           f"{data_folder}/trimmed/{ds}_r2.unpaired.fastq"],
+                          f"{data_folder}/{ds}.mRNA.answer.tsv")
 
 
 def blastTranscript():
@@ -413,12 +434,15 @@ def blastTranscript():
     Blast mrna to contig result: data/{species}/{ds}.{method_assemble}.blast.mrna_to_contig.tsv
     Blast contig to mrna result: data/{species}/{ds}.{method_assemble}.blast.contig_to_mrna.tsv
     """
+    # for each species for each datasets for each assemble method
     for species in data['species']:
-        # mrna database
         data_folder = f"{base_folder}/{species}"
+        !mkdir -p {data_folder}/blast
+
+        # mRNA database and self blast
         mrna_seq = f"{data_folder}/mRNA.fasta"
         mrna_blast = f"{data_folder}/blast/mRNA"
-        !mkdir -p {data_folder}/blast
+        logger.info(f"Blast {mrna_seq}")
         %dk {data['images']['blast']} \
             makeblastdb -in {mrna_seq} -dbtype nucl -out {mrna_blast}
         %dk {data['images']['blast']} \
@@ -427,23 +451,25 @@ def blastTranscript():
 
         for ds in data['datasets']:
             for method_assemble in data['assemble']:
-                # assembled database
-                assembled_seq = f"{data_folder}/{ds}.{method_assemble}.fasta"
-                assembled_blast = f"{data_folder}/blast/{ds}.{method_assemble}"
+                contig_seq = f"{data_folder}/{ds}.{method_assemble}.fasta"
                 blast_name = f"{data_folder}/{ds}.{method_assemble}.blast"
-                %dk {data['images']['blast']} \
-                    makeblastdb -in {assembled_seq} -dbtype nucl -out {assembled_blast}
+                contig_blast = f"{data_folder}/blast/{ds}.{method_assemble}"
 
-                # blast self
+                # contig database and self blast
+                logger.info(f"Blast {contig_seq}")
                 %dk {data['images']['blast']} \
-                    blastn -db {assembled_blast} -query {assembled_seq} -outfmt 6 -out {blast_name}.self.tsv \
+                    makeblastdb -in {contig_seq} -dbtype nucl -out {contig_blast}
+                %dk {data['images']['blast']} \
+                    blastn -db {contig_blast} -query {contig_seq} -outfmt 6 -out {blast_name}.self.tsv \
                     -evalue {data['blast']['evalue']} -perc_identity {data['blast']['identity']}
+
                 # blast mrna to contig
+                logger.info(f"Blast {contig_seq} and {mrna_seq}")
                 %dk {data['images']['blast']} \
-                    blastn -db {assembled_blast} -query {mrna_seq}      -outfmt 6 -out {blast_name}.mrna_to_contig.tsv
+                    blastn -db {contig_blast} -query {mrna_seq}   -outfmt 6 -out {blast_name}.mrna_to_contig.tsv
                 # blast contig to mrna
                 %dk {data['images']['blast']} \
-                    blastn -db {mrna_blast}      -query {assembled_seq} -outfmt 6 -out {blast_name}.contig_to_mrna.tsv
+                    blastn -db {mrna_blast}   -query {contig_seq} -outfmt 6 -out {blast_name}.contig_to_mrna.tsv
 
 
 def checkAssembleQuality():
@@ -456,23 +482,26 @@ def checkAssembleQuality():
 
     Outputs
     -------
-    Transrate Output: data/{species}/transrate
+    Transrate output: data/{species}/transrate
     Transrate tsv: data/{species}/xx.{method_assemble}.transrate.tsv
     """
+    # for each species for each datasets for each assemble method
     for species in data['species']:
         data_folder = f"{base_folder}/{species}"
-        transrate_folder = f"{data_folder}/transrate"
-        !mkdir -p {transrate_folder}
         for ds in data['datasets']:
-            ori_seq = f"{data_folder}/{ds}"
             for method_assemble in [*data['assemble'], "mRNA"]:
-                assembled_seq = f"{data_folder}/{ds}.{method_assemble}.fasta"
+                transrate_folder = f"{data_folder}/transrate"
+                !mkdir -p {transrate_folder}
+                name = f"{ds}.{method_assemble}"
+
+                # run transrate
+                logger.info(f"Transrate {species} {name}")
                 %dk {data['images']['transrate']} \
-                    transrate --assembly {ori_seq}.{method_assemble}.fasta --threads {thread} \
-                    --output {transrate_folder}/{ds}.{method_assemble} \
-                    --left {ori_seq}_r1.fastq --right {ori_seq}_r2.fastq
-                !mv {transrate_folder}/{ds}.{method_assemble}/{ds}.{method_assemble}/contigs.csv \
-                    {data_folder}/{ds}.{method_assemble}.transrate.csv
+                    transrate --assembly {data_folder}/{name}.fasta --threads {thread} \
+                    --output {transrate_folder}/{name} \
+                    --left {data_folder}/{ds}_r1.fastq --right {data_folder}/{ds}_r2.fastq
+                !mv {transrate_folder}/{name}/{name}/contigs.csv \
+                    {data_folder}/{name}.transrate.csv
 
 
 # main

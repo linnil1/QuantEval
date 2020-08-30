@@ -1,9 +1,22 @@
 import os
 import re
+import logging
+from collections import defaultdict
 from Bio import SeqIO
 import pandas as pd
 import numpy as np
-from collections import defaultdict
+
+
+def setupLogger():
+    """setup logger"""
+    logger = logging.getLogger('QuantEval')
+    logger.setLevel(logging.DEBUG)
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+    return logger
 
 
 def mRNAFilter(basedir, refdir, simdir, shortest_length):
@@ -37,8 +50,10 @@ def mRNAFilter(basedir, refdir, simdir, shortest_length):
     shortest_length: int
         Length threshold of mrna
     """
+    logger = logging.getLogger('QuantEval')
+
     # 1. Get transcriptome name which len > threashold
-    print("load transcriptome.fasta")
+    logger.info("load transcriptome.fasta")
     transcript_pool = set()  # store all transcriptome name
     transcript_length = 0
     total_transcript_length = 0
@@ -54,7 +69,7 @@ def mRNAFilter(basedir, refdir, simdir, shortest_length):
 
     # 2. Get mrna from rna and not from mitochordial
     #    and collect chromosome and gene along mrna
-    print("extract mRNA in annotation.gff")
+    logger.info("extract mRNA in annotation.gff")
     chromosome_pool = set()  # store all chromosome name
     annotation_pool = list()
     mRNA_parent = dict()
@@ -107,7 +122,7 @@ def mRNAFilter(basedir, refdir, simdir, shortest_length):
 
     # 3. Regenerate the gtf from gff for mRNA and flux_simulator
     #    Select those gene mrna exon had appeared in the pool
-    print("output flux_simulator.gtf and mRNA.gtf")
+    logger.info("output flux_simulator.gtf and mRNA.gtf")
     mRNA_count = 0
     total_transcript_length = 0
     os.makedirs(simdir, exist_ok=True)
@@ -156,7 +171,7 @@ def mRNAFilter(basedir, refdir, simdir, shortest_length):
 
     # 4. Filter those genome that appeared in the pool
     #    Separate chromosome to /chromosome/*.fasta
-    print("output genome.fasta and chromosome.fasta")
+    logger.info("output genome.fasta and chromosome.fasta")
     os.makedirs(simdir + "/chromosome", exist_ok=True)
     chromosome_count = 0
     with open(basedir + "/chromosome.fasta", "w") as genome_out:
@@ -172,7 +187,7 @@ def mRNAFilter(basedir, refdir, simdir, shortest_length):
     print("    - number of chromosomes: {:>16d}".format(chromosome_count))
 
     # 5. Filter those mrna that appeared in the pool
-    print("output mRNA.fasta")
+    logger.info("output mRNA.fasta")
     mRNA_count = 0
     total_transcript_length = 0
     retain_transcript = False
@@ -204,6 +219,8 @@ def splitInterleavedReads(file_fastq, output_name):
             {output_name}_r1.fastq and {output_name}_r1.fastq
     """
     # init
+    logger = logging.getLogger('QuantEval')
+    logger.info(f"Split {file_fastq} to {output_name}")
     fragment_count = 0
     r1 = open(output_name + "_r1.fastq", "w")
     r2 = open(output_name + "_r2.fastq", "w")
@@ -240,9 +257,9 @@ def fasta_length_filter(file_fasta, file_result, threshold):
     threshold: int
         The minimal threashold for transcriptome length
     """
-
-    # 1. Get transcriptome name which len > threashold
-    print("load transcriptome.fasta")
+    logger = logging.getLogger('QuantEval')
+    logger.info(f"filter {file_fasta} to {file_result} with len > {threshold}")
+    # Filter len > threashold
     with open(file_result, "w") as result:
         for seq in SeqIO.parse(file_fasta, "fasta"):
             if len(seq.seq) >= threshold:
@@ -318,6 +335,8 @@ def average_tpm(files_abundance, file_output):
     output: str
         The path you store the average value. Format: tsv.
     """
+    logger = logging.getLogger('QuantEval')
+    logger.info(f"Average {list(files_abundance.keys())} to {file_output}")
     # read all tables
     tables = [readQuantTsv(method, path) for method, path in files_abundance.items()]
 
@@ -438,6 +457,8 @@ def reference_tpm(flux_simulator_pro, flux_simulator_lib, files_unpaired_reads, 
     file_output: str
         The path to save answer tsv
     """
+    logger = logging.getLogger('QuantEval')
+    logger.info(f"Calculate real TPM/count from {flux_simulator_pro} and {files_unpaired_reads}")
     # Read from pro
     flux_columns = ['locus', 'name', 'conding', 'length', 'molecular_fraction', 'molecular_count',
                     'fragment_fraction', 'fragment_count', 'read_fraction', 'read_count', 'covered',
@@ -478,7 +499,7 @@ if __name__ == "__main__":
     fasta_length_filter(f"{data_folder}/rnaspades/transcripts.fasta", "{data_folder}/simlow.rnaspades.fasta", 500)
     average_tpm({'kallisto': f"{data_folder}/explow.mRNA.kallisto.tsv",
                  'rsem': f"{data_folder}/explow.mRNA.rsem.tsv",
-                 'salmon': f"{data_folder}/explow.mRNA.salmon.tsv"}, "tmp.tsv")
+                 'salmon': f"{data_folder}/explow.mRNA.salmon.tsv"}, "tmp1.tsv")
     reference_tpm("data/yeast/simulation/flux_simulator_yeast_low.pro",
                   "data/yeast/simulation/flux_simulator_yeast_low.lib",
                   ["data/yeast/trimmed/simlow_r1.unpaired.fastq",
