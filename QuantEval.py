@@ -1,11 +1,9 @@
 import argparse
 import logging
-
 import pandas as pd
-from tqdm import tqdm
 
-from quanteval_utils import *
-from utils import setupLogger
+from scripts.quanteval_utils import *
+from scripts.utils import setupLogger, merge_tpm
 
 
 def main(args):
@@ -39,7 +37,6 @@ def main(args):
 
     logger.debug("Recalculate abundance")
     sequence_df, component_df = aggregate_abundance(sequence_df, components, column_abundance, name + "_")
-
 
     logger.debug("Merge the table of connected_components and sequences")
     sequence_df[name] = component_label
@@ -96,24 +93,39 @@ def match(args):
     merged_df.to_csv(args.output, sep='\t', index=False)
 
 
+def preprocess_abundance(args):
+    """Rearange the abundance tsv file to one table"""
+    merged_df = pd.DataFrame(columns=["name"])
+    if args.merge:
+       merged_df = pd.read_csv(args.output)
+    merge_tpm({args.quantifier: args.abundance},
+              args.output, merged_df)
+
+
 if __name__ == "__main__":
-    # parser
+    # Setup parser
     parser = argparse.ArgumentParser(description="QuantEval")
     subparsers = parser.add_subparsers(title="mode", dest="mode", required=True, help="Choose Mode")
-    subparser = subparsers.add_parser("contig", aliases=['reference'])
+    subparser = subparsers.add_parser("contig", aliases=['reference'], help="Generate ambiguity cluster")
     subparser.add_argument("--abundance", type=str, required=True, help="The file of abundance data from preprocessQuantEval in pipelines.ipy")
     subparser.add_argument("--transrate", type=str, required=True, help="The transrate/contig.tsv file")
     subparser.add_argument("--blast",     type=str, required=True, help="The self-blast result with format 6")
     subparser.add_argument("--gtf",       type=str, default="",    help="(Optional) The gtf file of mRNA")
     subparser.add_argument("--output",    type=str, required=True, help="The tsv of table")
 
-    subparser = subparsers.add_parser("match")
+    subparser = subparsers.add_parser("match", help="Matched reference and contig")
     subparser.add_argument("--reference", type=str, required=True, help="The reference table")
     subparser.add_argument("--contig",    type=str, required=True, help="The contig table")
     subparser.add_argument("--blast",     type=str, required=True, help="The contig-mrna blast result with format 6")
     subparser.add_argument("--output",    type=str, required=True, help="The tsv of table")
 
-    # logger
+    subparser = subparsers.add_parser("pre_abundance", help="Preprocess Abundance files")
+    subparser.add_argument("--abundance",  type=str, required=True, help="The abundance tsv")
+    subparser.add_argument("--quantifier", choices={"kallisto", "rsem", "salmon"}, help="The contig table")
+    subparser.add_argument("--merge",      action="store_true",     help="The contig-mrna blast result with format 6")
+    subparser.add_argument("--output",     type=str, required=True, help="The tsv of table")
+
+    # Setup logger
     logger = setupLogger()
 
     # main
@@ -121,6 +133,8 @@ if __name__ == "__main__":
     logger.info(f"Run QuanEval with mode {args.mode}")
     if args.mode == "match":
         match(args)
+    elif args.mode == "pre_abundance":
+        preprocess_abundance(args)
     else:
         main(args)
     logger.info(f"Done {args.output}")

@@ -59,7 +59,7 @@ assemble:
     transabyss:
         minlen: 500
 
-quant:
+quantify:
     kallisto:
         kmer: 31
     rsem: {}

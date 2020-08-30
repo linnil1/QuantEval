@@ -1,13 +1,11 @@
-# This files contains all pipeline
-# Make sure run this with ipython
-# Make sure you have docker installed
+# Pipeline of quantification on de-novo transcriptome assembly.
+# Usage: `ipython pipeline.ipy -- --method=all`
 
-# !pip3 install pyyaml numpy pandas biopython
 import os
 import yaml
 from pprint import pprint
 import argparse
-from pipelines.utils import setupLogger
+from scripts.utils import setupLogger
 
 # Commmand line parameters
 parser = argparse.ArgumentParser(description="Pipeline of quantification of de-novo assembly")
@@ -15,11 +13,11 @@ parser.add_argument("--method",       type=str, default="all",  help="What step 
 parser.add_argument("-t", "--thread", type=int, default=32,     help="Threads")
 parser.add_argument("-m", "--memory", type=int, default=300,    help="Memory")
 parser.add_argument("--metadata",     type=str, default="metadata/meta.yaml", help="The path of metadata")
-parser.add_argument("--base",         type=str, default="data1", help="The path to store your data")
+parser.add_argument("--base",         type=str, default="data", help="The path to store your data")
 args = parser.parse_args()
 
 # init
-data = yaml.load(open(args.metadata))
+data = yaml.load(open(args.metadata), Loader=yaml.CLoader)
 thread = args.thread
 memory = args.memory
 base_folder = args.base
@@ -98,7 +96,7 @@ def prepareReference():
         * simulation/flux_simulator_clean.gtf
     """
 
-    from pipelines.utils import mRNAFilter
+    from scripts.utils import mRNAFilter
     for species in data['species']:
         logger.info(f"Prepare {species} mRNA and simulation data")
         data_folder = f"{base_folder}/{species}"
@@ -131,7 +129,7 @@ def simulation():
     Simulation output:  simulation/*
     Reads data:         xx_r1.fastq, xx_r2.fastq
     """
-    from pipelines.utils import splitInterleavedReads
+    from scripts.utils import splitInterleavedReads
     # for each species for each simulation datasets
     for species in data['species']:
         data_folder = f"{base_folder}/{species}"
@@ -218,7 +216,7 @@ def assemble():
     -------
     Assembled sequences: data/{species}/xx.{assemble_method}.fasta
     """
-    from pipelines.utils import fasta_length_filter
+    from scripts.utils import fasta_length_filter
 
     # for each species for each datasets for each assemble method
     for species in data['species']:
@@ -302,7 +300,7 @@ def quantification(reference=True):
             for method_assemble in [*data['assemble'], "mRNA"]:
                 if method_assemble == "mRNA" and not reference:
                     continue
-                for method_quantify in data['quant']:
+                for method_quantify in data['quantify']:
                     # TODO check: Using different strand when proceed mouse data with experiment fastq
                     if ds.startswith("exp") and species == "mouse":
                         strand_kallisto = "--rf-stranded"
@@ -323,7 +321,7 @@ def quantification(reference=True):
                     # kallisto
                     if method_quantify == "kallisto":
                         %dk {image} \
-                            kallisto index -i {quantify_folder}/{name}.index -k {data['quant'][method_quantify]['kmer']} {whole_seq}
+                            kallisto index -i {quantify_folder}/{name}.index -k {data['quantify'][method_quantify]['kmer']} {whole_seq}
                         %dk {image} \
                             kallisto quant -i {quantify_folder}/{name}.index -t {thread} {strand_kallisto} \
                                  -o {quantify_folder} {ori_seq(1)} {ori_seq(2)}
@@ -342,7 +340,7 @@ def quantification(reference=True):
                     elif method_quantify == "salmon":
                         %dk {image} \
                             salmon index -i {quantify_folder}/{name}.index -t {whole_seq} --type quasi \
-                                -k {data['quant'][method_quantify]['kmer']}
+                                -k {data['quantify'][method_quantify]['kmer']}
                         %dk {image} \
                             salmon quant -i {quantify_folder}/{name}.index -p {thread} -l A \
                                 -1 {ori_seq(1)} -2 {ori_seq(2)} -o {quantify_folder}
@@ -364,7 +362,7 @@ def answerExp():
     -------
     Answer tsv files: data/{species}/xx.mRNA.answer.tsv
     """
-    from pipelines.utils import average_tpm
+    from scripts.utils import average_tpm
     # for each experiment
     for species in data['species']:
         data_folder = f"{base_folder}/{species}"
@@ -372,9 +370,9 @@ def answerExp():
             if data['datasets'][ds]['type'] != "experiment":
                 continue
             # average the abundance data
-            logger.info(f"Create answer for {species} {ds} by {list(data['quant'].keys())}")
+            logger.info(f"Create answer for {species} {ds} by {list(data['quantify'].keys())}")
             files = {method_quantify: f"{data_folder}/{ds}.mRNA.{method_quantify}.tsv"
-                        for method_quantify in data['quant']}
+                        for method_quantify in data['quantify']}
             average_tpm(files, f"{data_folder}/{ds}.mRNA.answer.tsv")
 
 
@@ -395,7 +393,7 @@ def answerSim():
     -------
     Answer tsv files: data/{species}/xx.mRNA.answer.tsv
     """
-    from pipelines.utils import reference_tpm
+    from scripts.utils import reference_tpm
 
     # for each simulation
     for species in data['species']:
@@ -448,6 +446,9 @@ def blastTranscript():
         %dk {data['images']['blast']} \
             blastn -db {mrna_blast} -query {mrna_seq} -outfmt 6 -out {data_folder}/mRNA.blast.self.tsv \
             -evalue {data['blast']['evalue']} -perc_identity {data['blast']['identity']}
+        # create soft link
+        for ds in data['datasets']:
+            !ln -s mRNA.blast.self.tsv {data_folder}/{ds}.mRNA.blast.self.tsv
 
         for ds in data['datasets']:
             for method_assemble in data['assemble']:
@@ -504,6 +505,71 @@ def checkAssembleQuality():
                     {data_folder}/{name}.transrate.csv
 
 
+def Quanteval():
+    """
+    Run QuantEval finally
+
+    Inputs
+    ------
+    Abundace data: data/{species}/xx.{method_assemble}.{method_quantify}.tsv
+    Abundace answer data: data/{species}/xx.mRNA.anser.tsv
+
+    Outputs
+    -------
+    Reference: data/{species}/quanteval/xx.{method_assemble}.ref.tsv
+    Contig: data/{species}/quanteval/xx.{method_assemble}.contig.tsv
+    Matched: data/{species}/quanteval/xx.{method_assemble}.match.tsv
+    """
+    from scripts.utils import merge_tpm
+    # for each species for each datasets for each assemble method
+    for species in data['species']:
+        data_folder = f"{base_folder}/{species}"
+        for ds in data['datasets']:
+            for method_assemble in ["mRNA", *data['assemble']]:
+                quanteval_folder = f"{data_folder}/quanteval"
+                !mkdir -p {quanteval_folder}
+                name = f"{ds}.{method_assemble}"
+                file_abundance= f"{quanteval_folder}/{name}.merged.csv"
+                file_transrate = f"{data_folder}/{name}.transrate.csv"
+                file_blast_self = f"{data_folder}/{name}.blast.self.tsv"
+                file_ref_output = f"{quanteval_folder}/{ds}.mRNA.ref.tsv"
+                file_contig_output = f"{quanteval_folder}/{name}.contig.tsv"
+
+                # collect all abundance data
+                logger.info(f"Merge Abundance {name}")
+                files = {method_quantify: f"{data_folder}/{name}.{method_quantify}.tsv"
+                            for method_quantify in data['quantify']}
+
+                # rename mRNA to answer
+                if method_assemble == "mRNA":
+                    files['answer'] = f"{data_folder}/{name}.answer.tsv"
+
+                # merge it
+                merge_tpm(files, file_abundance)
+
+                # main
+                logger.info(f"QuantEval cluster {name}")
+                if method_assemble == "mRNA":
+                    !python3 QuantEval.py reference \
+                        --abundance {file_abundance} \
+                        --transrate {file_transrate} \
+                        --blast     {file_blast_self} \
+                        --gtf       {data_folder}/mRNA.gtf \
+                        --output    {file_ref_output}
+                else:
+                    !python3 QuantEval.py contig \
+                        --abundance {file_abundance} \
+                        --transrate {file_transrate} \
+                        --blast     {file_blast_self} \
+                        --output    {file_contig_output}
+
+                    !python3 QuantEval.py match \
+                        --reference {file_ref_output} \
+                        --contig    {file_contig_output} \
+                        --blast     {data_folder}/{name}.blast.contig_to_mrna.tsv \
+                        --output    {quanteval_folder}/{name}.match.csv
+
+
 # main
 if args.method in ["all", "download"]:
     download()
@@ -524,5 +590,5 @@ if args.method in ["all", "answer"]:
 if args.method in ["all", "postassemble"]:
     blastTranscript()
     checkAssembleQuality()
-
-# ipython pipeline.ipy -- --method=quantify
+if args.method in ["all", "quanteval"]:
+    Quanteval()

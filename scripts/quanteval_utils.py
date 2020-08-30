@@ -3,7 +3,7 @@ import numpy as np
 import re
 from scipy.sparse.csgraph import connected_components
 from scipy.sparse import coo_matrix
-from Match import Match
+from scripts.Match import Match
 
 
 def add_prefix(df, prefix, include=[], exclude=["name"]):
@@ -52,11 +52,11 @@ def read_transrate(file_transrate):
         'contig_name': 'name',
         'length': 'length',
         'p_good': 'good',
-        'p_bases_covered': 'bases_covered', 
+        'p_bases_covered': 'bases_covered',
         'p_seq_true': 'seq_true',
         'score': 'score',
         'p_not_segmented': 'not_segmented'})
-    transrate = transrate.loc[:, ('name', 'length', 'good', 'bases_covered', 
+    transrate = transrate.loc[:, ('name', 'length', 'good', 'bases_covered',
                                   'seq_true', 'score', 'not_segmented')]
 
     transrate = add_prefix(transrate, "tr_", exclude=['name', 'length'])
@@ -156,7 +156,7 @@ def intersect_match(blast_df, q_df, r_df):
 
 def reshape_component(component_label, component_size):
     """
-    Reshape from component id pre sequences to 
+    Reshape from component id pre sequences to
     sequences list per components
 
     Parameters
@@ -200,7 +200,7 @@ def construct_graph(matches, size, threshold=90):
             links.append((match.q_name, match.r_name))
 
     # run connected_components
-    mat = coo_matrix((np.ones(len(links), dtype=np.bool), list(zip(*links))), shape=(size, size)) 
+    mat = coo_matrix((np.ones(len(links), dtype=np.bool), list(zip(*links))), shape=(size, size))
     component_size, component_label = connected_components(mat, directed=False)
 
     # reshape
@@ -229,16 +229,16 @@ def read_gene(map_name_id, file_gtf):
     """
     gene_name_id = {}  # Tmporary dict store name as key as value as index
     component_label = [-1] * len(map_name_id)
-    
+
     # read data
     columns = ['chr', 'source', 'type', 'start', 'end', 'score', 'strand', 'phase', 'header']
     ref_gtf = pd.read_table(file_gtf, sep='\t', header=None, names=columns)
     for i, data in ref_gtf.iterrows():
-        regex = re.match('gene_id "(\S+)"; transcript_id "(\S+)"', data['header'])
+        regex = re.match(r'gene_id "(\S+)"; transcript_id "(\S+)"', data['header'])
         if regex:
             gene_name = regex.group(1)
             transcript_name = regex.group(2)
-        
+
             # save to genes dictionary
             if gene_name not in gene_name_id:
                 gene_name_id[gene_name] = len(gene_name_id)
@@ -246,7 +246,7 @@ def read_gene(map_name_id, file_gtf):
             # Assign gene label to transcript
             # this also remove the duplicated transcript name
             component_label[map_name_id[gene_name]] = gene_name_id[gene_name]
-        
+
     # reshape
     components = reshape_component(component_label, len(gene_name_id))
     return components, component_label, gene_name_id.keys()
@@ -323,12 +323,12 @@ def matches_to_table(matches):
 def diff_ref_contig(merged_df):
     """Calculate the tpm/count/length difference"""
     # calculate difference in length
-    merged_df['length_difference'] = (merged_df['contig_length'] - merged_df['ref_length']) \
-                                   / (merged_df['contig_length'] + merged_df['ref_length']) * 100
+    merged_df['length_difference'] = (merged_df['contig_length'] - merged_df['ref_length']) / \
+                                     (merged_df['contig_length'] + merged_df['ref_length']) * 100
 
     # calculate difference in tpm/count
     for matric in ["tpm", "count"]:
-        column = list(filter(lambda a: str(a).startswith(f"contig_xprs_{matric}_") , merged_df.columns))
+        column = list(filter(lambda a: str(a).startswith(f"contig_xprs_{matric}_"), merged_df.columns))
         column_abundance_error = [i.replace(f"_{matric}_", f"_{matric}_error_") for i in column]
         column_answer = f"ref_xprs_{matric}_answer"
         merged_df[column_abundance_error] = (merged_df[column].sub(merged_df[column_answer], axis=0)) / \

@@ -86,7 +86,7 @@ def mRNAFilter(basedir, refdir, simdir, shortest_length):
             annotation_line = annotation_line.rstrip()
             annotation_data = annotation_line.split("\t")
             chromosome = annotation_data[0]
-            category   = annotation_data[2]
+            category = annotation_data[2]
             attributes = annotation_data[8]
 
             # filter
@@ -129,7 +129,7 @@ def mRNAFilter(basedir, refdir, simdir, shortest_length):
     annotation_out = open(basedir + "/mRNA.gtf", "w")
     flux_annotation_out = open(simdir + "/flux_simulator.gtf", "w")
     for annotation_data in annotation_pool:
-        category   = annotation_data[2]
+        category = annotation_data[2]
         attributes = annotation_data[8]
 
         if category == "gene":
@@ -371,7 +371,7 @@ def readsCount(files_reads):
     count = defaultdict(int)
     for f in files_reads:
         for seq in SeqIO.parse(f, 'fastq'):
-            name = re.match('\S+?:\S+?:\S+?:(\S+?):', seq.id).group(1)
+            name = re.match(r'\S+?:\S+?:\S+?:(\S+?):', seq.id).group(1)
             count[name] += 1
 
     # store in table
@@ -490,6 +490,41 @@ def reference_tpm(flux_simulator_pro, flux_simulator_lib, files_unpaired_reads, 
     flux_simulator.to_csv(file_output, sep='\t', index=False)
 
 
+def merge_tpm(files_abundance, file_output,
+              merged_table=pd.DataFrame(columns=["name"])):
+    """
+    Merge the tmp/count created by kallisto, rsem and salmon
+
+    Example usage:
+        merge_tpm({'kallisto': "/data/abundance.tsv"}, "merged.tsv")
+
+    Example output file column:
+        ['name', 'tpm_kallisto', 'count_kallisto', 'tpm_xx', 'count_xx', ...]
+
+    Parameters
+    ----------
+    files_abundance: dict
+        key: quantification method
+        value: path to abundance.tsv
+    file_output: str
+        The path you store the average value. Format: csv.
+    merged_table: pandas.DataFrame
+        The init table you start to merge
+    """
+    logger = logging.getLogger('QuantEval')
+    logger.info(f"merge {files_abundance.values()} to {file_output}")
+
+    # read and merge table by transcript name
+    for method, path in files_abundance.items():
+        table = readQuantTsv(method, path)
+        table = table.rename(columns={
+            'tpm': f"tpm_{method}",
+            'count': f"count_{method}"})
+        merged_table = pd.merge(merged_table, table, on="name", how="outer")
+
+    merged_table.to_csv(file_output, index=False)
+
+
 if __name__ == "__main__":
     data_folder = "data/yeast"
     """
@@ -505,6 +540,5 @@ if __name__ == "__main__":
                   ["data/yeast/trimmed/simlow_r1.unpaired.fastq",
                    "data/yeast/trimmed/simlow_r2.unpaired.fastq"],
                   "tmp.tsv")
+    merge_tpm({'kallisto': "data/yeast/simlow.mRNA.kallisto.tsv"}, "tmp.tsv")
     """
-
-    sys.exit(0)
