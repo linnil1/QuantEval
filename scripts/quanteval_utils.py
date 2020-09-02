@@ -10,8 +10,6 @@ def add_prefix(df, prefix, include=[], exclude=["name"]):
     """
     Add prefix to column
 
-    I know this function is somehow useless, but compatible to Ping-Han's version
-
     Parameters
     ----------
     df: pandas.DataFrame
@@ -181,7 +179,8 @@ def construct_graph(matches, size, threshold=90):
     Parameters
     ----------
     matches: dict of Match
-    sequences: dict of sequences
+    threshold: float
+        The threshold of global alignment for both accuracy and recovery
 
     Returns
     -------
@@ -337,4 +336,11 @@ def diff_ref_contig(merged_df):
         # remove divied 0
         merged_df[column_abundance_error].fillna(value=0)
 
+    return merged_df
+
+
+def round_expression(merged_df, decimals=3):
+    """Round the tpm/count to given decimals"""
+    columns = list(filter(lambda a: "xprs_" in a or "tr_" in a, merged_df.columns))
+    merged_df[columns] = merged_df[columns].round(3)
     return merged_df

@@ -522,6 +522,9 @@ def merge_tpm(files_abundance, file_output,
             'count': f"count_{method}"})
         merged_table = pd.merge(merged_table, table, on="name", how="outer")
 
+    # round and save
+    columns = list(filter(lambda a: a != "name", merged_table.columns))
+    merged_table[columns] = merged_table[columns].round(3)
     merged_table.to_csv(file_output, index=False)
 
 

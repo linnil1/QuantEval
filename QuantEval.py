@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 import pandas as pd
 
 from scripts.quanteval_utils import *
@@ -26,14 +27,14 @@ def main(args):
     sequence_df = pd.merge(sequence_df, transrate, on='name', how="outer")
 
     logger.debug("Read Blast")
-    blast_df = filter_blastn(args.blast)
+    blast_df = filter_blastn(args.blast, identity=args.identity, evalue=args.evalue, length=args.length)
     blast_df = map_blastid(blast_df, map_name_id, map_name_id)
 
     # build connect component
     logger.debug("Run connect component for query sequences")
     name = "component"
     matches = intersect_match(blast_df, sequence_df, sequence_df)
-    components, component_label, component_name = construct_graph(matches, size=n)
+    components, component_label, component_name = construct_graph(matches, size=n, threshold=args.alignment)
 
     logger.debug("Recalculate abundance")
     sequence_df, component_df = aggregate_abundance(sequence_df, components, column_abundance, name + "_")
@@ -63,6 +64,7 @@ def main(args):
                              left_on=name, right_on='index', suffixes=["", '_' + name])
 
     logger.debug(f"Save to {args.output}")
+    merged_df = round_expression(merged_df)
     merged_df.to_csv(args.output, sep='\t', index=False)
 
 
@@ -73,7 +75,7 @@ def match(args):
     contig_df = pd.read_csv(args.contig, sep='\t')
 
     logger.debug("Read Blast")
-    blast_df = filter_blastn(args.blast)
+    blast_df = filter_blastn(args.blast, identity=args.identity, evalue=args.evalue, length=args.length)
     map_qname_id = dict(zip(contig_df['name'], contig_df.index))
     map_rname_id = dict(zip(reference_df['name'], reference_df.index))
     blast_df = map_blastid(blast_df, map_qname_id, map_rname_id)
@@ -90,13 +92,16 @@ def match(args):
 
     logger.debug("Calculate difference between contig and reference in each matches")
     merged_df = diff_ref_contig(merged_df)
+
+    # save
+    merged_df = round_expression(merged_df)
     merged_df.to_csv(args.output, sep='\t', index=False)
 
 
 def preprocess_abundance(args):
     """Rearange the abundance tsv file to one table"""
     merged_df = pd.DataFrame(columns=["name"])
-    if args.merge:
+    if args.merge and os.path.isfile(args.output):
        merged_df = pd.read_csv(args.output)
     merge_tpm({args.quantifier: args.abundance},
               args.output, merged_df)
@@ -107,23 +112,30 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="QuantEval")
     subparsers = parser.add_subparsers(title="mode", dest="mode", required=True, help="Choose Mode")
     subparser = subparsers.add_parser("contig", aliases=['reference'], help="Generate ambiguity cluster")
-    subparser.add_argument("--abundance", type=str, required=True, help="The file of abundance data from preprocessQuantEval in pipelines.ipy")
-    subparser.add_argument("--transrate", type=str, required=True, help="The transrate/contig.tsv file")
-    subparser.add_argument("--blast",     type=str, required=True, help="The self-blast result with format 6")
-    subparser.add_argument("--gtf",       type=str, default="",    help="(Optional) The gtf file of mRNA")
-    subparser.add_argument("--output",    type=str, required=True, help="The tsv of table")
+    subparser.add_argument("--abundance", type=str, required=True,  help="The abundance tsv")
+    subparser.add_argument("--transrate", type=str, required=True,  help="The transrate/contig.tsv file")
+    subparser.add_argument("--blast",     type=str, required=True,  help="The self-blast result with format 6")
+    subparser.add_argument("--gtf",       type=str, default="",     help="(Optional) The gtf file of mRNA")
+    subparser.add_argument("--identity",  type=float, default=70,   help="The critia of blast identity threshold")
+    subparser.add_argument("--evalue",    type=float, default=1e-5, help="The critia of blast evalue threshold")
+    subparser.add_argument("--length",    type=float, default=0,    help="The critia of blast length threshold")
+    subparser.add_argument("--alignment", type=float, default=90,   help="The threshold of recovery/accuracy in global alignment (Unit: %)")
+    subparser.add_argument("--output",    type=str, required=True,  help="The tsv of table")
 
     subparser = subparsers.add_parser("match", help="Matched reference and contig")
-    subparser.add_argument("--reference", type=str, required=True, help="The reference table")
-    subparser.add_argument("--contig",    type=str, required=True, help="The contig table")
-    subparser.add_argument("--blast",     type=str, required=True, help="The contig-mrna blast result with format 6")
-    subparser.add_argument("--output",    type=str, required=True, help="The tsv of table")
+    subparser.add_argument("--reference", type=str, required=True,  help="The reference table")
+    subparser.add_argument("--contig",    type=str, required=True,  help="The contig table")
+    subparser.add_argument("--blast",     type=str, required=True,  help="The contig_to_mrna blast result with format 6")
+    subparser.add_argument("--identity",  type=float, default=70,   help="The critia of blast identity threshold")
+    subparser.add_argument("--evalue",    type=float, default=1e-5, help="The critia of blast evalue threshold")
+    subparser.add_argument("--length",    type=float, default=0,    help="The critia of blast length threshold")
+    subparser.add_argument("--output",    type=str, required=True,  help="The tsv of table")
 
     subparser = subparsers.add_parser("pre_abundance", help="Preprocess Abundance files")
     subparser.add_argument("--abundance",  type=str, required=True, help="The abundance tsv")
-    subparser.add_argument("--quantifier", choices={"kallisto", "rsem", "salmon"}, help="The contig table")
-    subparser.add_argument("--merge",      action="store_true",     help="The contig-mrna blast result with format 6")
-    subparser.add_argument("--output",     type=str, required=True, help="The tsv of table")
+    subparser.add_argument("--quantifier", choices={"kallisto", "rsem", "salmon"}, help="The quantification tools")
+    subparser.add_argument("--merge",      action="store_true",     help="Merge the output file or not")
+    subparser.add_argument("--output",     type=str, required=True, help="The table in csv format")
 
     # Setup logger
     logger = setupLogger()

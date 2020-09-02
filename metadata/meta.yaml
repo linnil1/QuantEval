@@ -5,17 +5,6 @@ species:
         ref_annotation: ftp://ftp.ensembl.org/pub/release-90/gff3/saccharomyces_cerevisiae/Saccharomyces_cerevisiae.R64-1-1.90.gff3.gz
         # It will merge the ids in array into single fastq data
         mrna_min_length: 500
-    dog:
-        ref_genome: ftp://ftp.ensembl.org/pub/release-90/fasta/canis_familiaris/dna/Canis_familiaris.CanFam3.1.dna.toplevel.fa.gz
-        ref_transcriptome: ftp://ftp.ensembl.org/pub/release-90/fasta/canis_familiaris/cdna/Canis_familiaris.CanFam3.1.cdna.all.fa.gz
-        ref_annotation: ftp://ftp.ensembl.org/pub/release-90/gff3/canis_familiaris/Canis_familiaris.CanFam3.1.90.chr.gff3.gz
-        mrna_min_length: 500
-
-    mouse:
-        ref_genome: ftp://ftp.ensembl.org/pub/release-90/fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna.toplevel.fa.gz
-        ref_transcriptome: ftp://ftp.ensembl.org/pub/release-90/fasta/mus_musculus/cdna/Mus_musculus.GRCm38.cdna.all.fa.gz
-        ref_annotation: ftp://ftp.ensembl.org/pub/release-90/gff3/mus_musculus/Mus_musculus.GRCm38.90.chr.gff3.gz
-        mrna_min_length: 500
 
 datasets:
     simlow:
@@ -26,28 +15,12 @@ datasets:
             simulation_file: metadata/flux_simulator_dog_low
         mouse:
             simulation_file: metadata/flux_simulator_mouse_low
-    simhigh:
-        type: simulation
-        yeast:
-            simulation_file: metadata/flux_simulator_yeast_high
-        dog:
-            simulation_file: metadata/flux_simulator_dog_high
-        mouse:
-            simulation_file: metadata/flux_simulator_mouse_high
     explow:
         type: experiment
         yeast:
             sraid: [SRR453566]
         dog:
             sraid: [SRR882109]
-        mouse:
-            sraid: [SRR203276]
-    exphigh:
-        type: experiment
-        yeast:
-            sraid: [SRR453566,SRR453567,SRR453568]
-        dog:
-            sraid: [SRR882105]
         mouse:
             sraid: [SRR203276]
 

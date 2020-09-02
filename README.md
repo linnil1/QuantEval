@@ -25,7 +25,13 @@ I test successfully with below requirments
    * R pacakges: gridExtra, grid, stats, tidyverse, plyr, ggplot2, reshape2
 
 ## Usage
-### Run pipelines
+### 0. Download from github
+```
+git clone https://github.com/linnil1/QuantEval
+cd QuantEval
+```
+
+### 1. Run pipelines
 **It takes a long time and large space to run.**
 ```
 ipython pipeline.ipy -- --method=all
@@ -94,7 +100,7 @@ data/yeast/
     └── simlow_r2.unpaired.fastq
 ```
 
-### Run QuantEval Main Program
+### 2. Run QuantEval Main Program
 In brief, TPM/counts will be calculated based on each components, instead of normal method that show tpm/counts for each transcript individually.
 
 Three files are needed before running QuantEval
@@ -136,26 +142,26 @@ You can use example data in `./example` to test
 # add --merge can merge multiple tsv together
 # Only tsv of quantifier: kallisto, rsem, salmon are allowed
 python3 QuantEval.py pre_abundance \
-    --abundance example/kallisto_abundance.tsv \
+    --abundance  example/kallisto_abundance.tsv \
     --quantifier kallisto \
-    --output    abundance.tsv
+    --output     abundance.csv
 
 python3 QuantEval.py pre_abundance \
-    --abundance example/rsem_abundance.tsv \
+    --abundance  example/rsem_abundance.tsv \
     --quantifier rsem \
     --merge \
-    --output    example/abundance.tsv
+    --output     example/abundance.csv
 
 # main
 python3 QuantEval.py contig \
-    --abundance example/abundance.tsv \
-    --transrate example/transrate.csv \
-    --blast     example/contig.self.tsv \
-    --output    example/quanteval.contig.tsv
+    --abundance  example/abundance.csv \
+    --transrate  example/transrate.csv \
+    --blast      example/contig.self.tsv \
+    --output     example/quanteval.contig.tsv
 ```
 
 #### QuantEval Output format
-`quanteval.contig.tsv`
+`example/quanteval.contig.tsv`
 
 | column | description |
 |--------|-------------|
