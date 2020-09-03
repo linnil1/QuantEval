@@ -3,7 +3,17 @@ species:
         ref_genome: ftp://ftp.ensembl.org/pub/release-90/fasta/saccharomyces_cerevisiae/dna/Saccharomyces_cerevisiae.R64-1-1.dna.toplevel.fa.gz
         ref_transcriptome: ftp://ftp.ensembl.org/pub/release-90/fasta/saccharomyces_cerevisiae/cdna/Saccharomyces_cerevisiae.R64-1-1.cdna.all.fa.gz
         ref_annotation: ftp://ftp.ensembl.org/pub/release-90/gff3/saccharomyces_cerevisiae/Saccharomyces_cerevisiae.R64-1-1.90.gff3.gz
-        # It will merge the ids in array into single fastq data
+        mrna_min_length: 500
+    dog:
+        ref_genome: ftp://ftp.ensembl.org/pub/release-90/fasta/canis_familiaris/dna/Canis_familiaris.CanFam3.1.dna.toplevel.fa.gz
+        ref_transcriptome: ftp://ftp.ensembl.org/pub/release-90/fasta/canis_familiaris/cdna/Canis_familiaris.CanFam3.1.cdna.all.fa.gz
+        ref_annotation: ftp://ftp.ensembl.org/pub/release-90/gff3/canis_familiaris/Canis_familiaris.CanFam3.1.90.chr.gff3.gz
+        mrna_min_length: 500
+
+    mouse:
+        ref_genome: ftp://ftp.ensembl.org/pub/release-90/fasta/mus_musculus/dna/Mus_musculus.GRCm38.dna.toplevel.fa.gz
+        ref_transcriptome: ftp://ftp.ensembl.org/pub/release-90/fasta/mus_musculus/cdna/Mus_musculus.GRCm38.cdna.all.fa.gz
+        ref_annotation: ftp://ftp.ensembl.org/pub/release-90/gff3/mus_musculus/Mus_musculus.GRCm38.90.chr.gff3.gz
         mrna_min_length: 500
 
 datasets:
@@ -15,12 +25,28 @@ datasets:
             simulation_file: metadata/flux_simulator_dog_low
         mouse:
             simulation_file: metadata/flux_simulator_mouse_low
+    simhigh:
+        type: simulation
+        yeast:
+            simulation_file: metadata/flux_simulator_yeast_high
+        dog:
+            simulation_file: metadata/flux_simulator_dog_high
+        mouse:
+            simulation_file: metadata/flux_simulator_mouse_high
     explow:
         type: experiment
         yeast:
             sraid: [SRR453566]
         dog:
             sraid: [SRR882109]
+        mouse:
+            sraid: [SRR203276]
+    exphigh:
+        type: experiment
+        yeast:
+            sraid: [SRR453566,SRR453567,SRR453568]
+        dog:
+            sraid: [SRR882105]
         mouse:
             sraid: [SRR203276]
 
@@ -55,10 +81,8 @@ images:
     fastqc:         "quay.io/biocontainers/fastqc:0.11.9--0"
     trimmomatic:    "quay.io/biocontainers/trimmomatic:0.39--1"
     kallisto:       "quay.io/biocontainers/kallisto:0.46.2--h4f7b962_0"
-    # rsem:           "quay.io/biocontainers/rsem:1.3.3--pl526ha52163a_0"
-    # check version by %dk {image} bash -c "rsem-calculate-expression --version && bowtie2 --version"
+    # RSEM1.3.0 bowtie2 2.3.4.3
     rsem:           "quay.io/biocontainers/mulled-v2-3d754d866ba8c7a580bc674149777fc6b353add4:a29ddb91046557c57a1fe66644dd64dee62250c1-0"
     salmon:         "quay.io/biocontainers/salmon:0.11.3--h86b0361_2"
     blast:          "quay.io/biocontainers/blast:2.9.0--pl526he19e7b1_7"
-    # transrate:      "quay.io/biocontainers/transrate:1.0.3--h516909a_0"
     transrate:      "docker.io/pgcbioinfo/transrate:1.0.3"

@@ -9,7 +9,7 @@ from scripts.utils import setupLogger
 
 # Commmand line parameters
 parser = argparse.ArgumentParser(description="Pipeline of quantification of de-novo assembly")
-parser.add_argument("--method",       type=str, default="all",  help="What step you want to run. Default: all.")
+parser.add_argument("--method",       type=str, default="all",  help="Which step you want to run. Default: all.")
 parser.add_argument("-t", "--thread", type=int, default=32,     help="Threads")
 parser.add_argument("-m", "--memory", type=int, default=300,    help="Memory")
 parser.add_argument("--metadata",     type=str, default="metadata/meta.yaml", help="The path of metadata")
@@ -21,8 +21,9 @@ data = yaml.load(open(args.metadata), Loader=yaml.CLoader)
 thread = args.thread
 memory = args.memory
 base_folder = args.base
-%alias dk docker run -it --rm --security-opt label=disable -v $PWD:/app -w /app %s
 logger = setupLogger()
+%alias dk docker run -it --rm --security-opt label=disable -v $PWD:/app -w /app %s
+
 
 def download():
     """
